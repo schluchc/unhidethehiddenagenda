@@ -61,6 +61,7 @@ export async function onRequestPost(context) {
         extracted_author_source: article.extracted_author_source,
         supplemental_checked_urls: article.supplemental_context?.checked_urls || [],
         supplemental_usable_pages: article.supplemental_context?.chunks?.length || 0,
+        text_source: article.text_source || "unknown",
         publisher_search_triggered: article.publisher_search_context?.triggered || false,
         publisher_search_checked_urls: article.publisher_search_context?.checked_urls || [],
         publisher_search_usable_pages: article.publisher_search_context?.chunks?.length || 0,
@@ -138,7 +139,8 @@ async function fetchArticle(url, trace, env) {
   const subjectResult = resolveAnalysisSubject(title || "", authorResult);
   const author = subjectResult.name;
 
-  const articleText = extractReadableText(html).slice(0, 12000);
+  const articleTextResult = extractPrimaryArticleText(html);
+  const articleText = articleTextResult.text.slice(0, 12000);
 
   if (!articleText || articleText.length < 400) {
     throw appError(
@@ -158,6 +160,7 @@ async function fetchArticle(url, trace, env) {
   trace.mark("article_parsed", {
     html_chars: html.length,
     text_chars: articleText.length,
+    text_source: articleTextResult.source,
     author_detected: author !== "Unknown author",
     author_source: subjectResult.source,
     extracted_author: authorResult.name,
@@ -178,6 +181,7 @@ async function fetchArticle(url, trace, env) {
     extracted_author: authorResult.name,
     extracted_author_source: authorResult.source,
     text_excerpt: articleText,
+    text_source: articleTextResult.source,
     supplemental_context: supplementalContext,
     publisher_search_context: publisherSearchContext
   };
@@ -392,11 +396,40 @@ function fetchWithTimeout(url, options, timeoutMs, label) {
           `${label} exceeded timeout of ${timeoutMs}ms`
         );
       }
-      throw error;
+      throw buildNetworkFetchError(label, url, error);
     })
     .finally(() => {
       clearTimeout(timeoutId);
     });
+}
+
+function buildNetworkFetchError(label, url, error) {
+  const isModelCall = label.toLowerCase().includes("model");
+  const hostname = safeHostname(url);
+
+  if (isModelCall) {
+    return appError(
+      502,
+      "Could not reach the AI provider network endpoint. Please retry in a moment.",
+      "MODEL_NETWORK_ERROR",
+      `${label} network failure for ${url}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  return appError(
+    502,
+    `Could not load source page${hostname ? ` (${hostname})` : ""}. The site may block automated requests or require browser JS/cookies.`,
+    "SOURCE_NETWORK_ERROR",
+    `${label} network failure for ${url}: ${error instanceof Error ? error.message : String(error)}`
+  );
+}
+
+function safeHostname(url) {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
 }
 
 function buildModelApiError(status, contentType, rawBody) {
@@ -924,14 +957,103 @@ function getFirstMatch(input, regexes) {
   return "";
 }
 
-function extractReadableText(html) {
-  const cleaned = html
+function extractPrimaryArticleText(html) {
+  const cleaned = stripNonContentTags(html);
+
+  const articleBlocks = extractBlocksByTag(cleaned, "article");
+  const selectedArticle = selectBestContentBlock(articleBlocks);
+  if (selectedArticle.text.length >= 500) {
+    return { text: selectedArticle.text, source: "article_tag" };
+  }
+
+  const bodyBlocks = [
+    ...extractBlocksByAttr(cleaned, "main"),
+    ...extractBlocksByAttr(cleaned, "section"),
+    ...extractBlocksByAttr(cleaned, "div")
+  ];
+  const selectedBody = selectBestContentBlock(bodyBlocks);
+  if (selectedBody.text.length >= 700) {
+    return { text: selectedBody.text, source: "content_container" };
+  }
+
+  const bodyMatch = cleaned.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyHtml = bodyMatch?.[1] || cleaned;
+  const stripped = stripLikelyChrome(bodyHtml);
+  const fallbackText = htmlToText(stripped);
+  return { text: fallbackText, source: "body_fallback" };
+}
+
+function stripNonContentTags(html) {
+  return String(html || "")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, " ");
+}
 
-  const noTags = cleaned.replace(/<[^>]+>/g, " ");
+function extractBlocksByTag(html, tag) {
+  const blocks = [];
+  const regex = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "gi");
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    blocks.push(match[1]);
+  }
+  return blocks;
+}
+
+function extractBlocksByAttr(html, tag) {
+  const blocks = [];
+  const regex = new RegExp(
+    `<${tag}\\b[^>]*(?:id|class)=["'][^"']*(?:article|post|entry|content|story|body|main)[^"']*["'][^>]*>([\\s\\S]*?)<\\/${tag}>`,
+    "gi"
+  );
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    blocks.push(match[1]);
+  }
+  return blocks;
+}
+
+function selectBestContentBlock(blocks) {
+  let best = { text: "", score: -1 };
+  for (const block of blocks) {
+    const text = htmlToText(stripLikelyChrome(block));
+    const score = scoreContentText(text);
+    if (score > best.score) {
+      best = { text, score };
+    }
+  }
+  return best;
+}
+
+function stripLikelyChrome(html) {
+  return String(html || "")
+    .replace(/<header[\s\S]*?<\/header>/gi, " ")
+    .replace(/<footer[\s\S]*?<\/footer>/gi, " ")
+    .replace(/<nav[\s\S]*?<\/nav>/gi, " ")
+    .replace(/<aside[\s\S]*?<\/aside>/gi, " ")
+    .replace(/<form[\s\S]*?<\/form>/gi, " ")
+    .replace(/<ul[\s\S]*?<\/ul>/gi, " ");
+}
+
+function htmlToText(html) {
+  const noTags = String(html || "").replace(/<[^>]+>/g, " ");
   return decodeHtml(noTags).replace(/\s+/g, " ").trim();
+}
+
+function extractReadableText(html) {
+  return htmlToText(stripNonContentTags(html));
+}
+
+function scoreContentText(text) {
+  const value = String(text || "");
+  if (!value) return 0;
+  const words = value.split(/\s+/).length;
+  const punct = (value.match(/[.!?]/g) || []).length;
+  const navPenalty = (value.match(/\b(home|menu|search|newsletter|subscribe|login)\b/gi) || [])
+    .length;
+  return words + punct * 12 - navPenalty * 30;
 }
 
 function decodeHtml(text) {

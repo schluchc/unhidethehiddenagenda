@@ -63,7 +63,7 @@ form.addEventListener("submit", async (event) => {
 
     setStatus("Analysis complete.", "info");
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to analyze this article.";
+    const message = normalizeClientError(error);
     setStatus(message, "error");
 
     if (error instanceof ApiError && error.payload?.debug) {
@@ -284,4 +284,18 @@ class ApiError extends Error {
     this.payload = payload;
     this.status = status;
   }
+}
+
+function normalizeClientError(error) {
+  const fallback = "Unable to analyze this article.";
+  if (!(error instanceof Error)) return fallback;
+
+  const msg = String(error.message || "");
+  const lower = msg.toLowerCase();
+
+  if (lower.includes("failed to fetch") || lower.includes("load failed")) {
+    return "Could not reach /api/analyze (network load failed). Check that the local dev server is running and retry.";
+  }
+
+  return msg || fallback;
 }
