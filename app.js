@@ -9,6 +9,7 @@ const activityTextEl = document.getElementById("activity-text");
 const progressFillEl = document.getElementById("progress-fill");
 const resultsEl = document.getElementById("results");
 const debugPanelEl = document.getElementById("debug-panel");
+const debugLineEl = document.getElementById("debug-line");
 const debugOutputEl = document.getElementById("debug-output");
 
 const articleTitleEl = document.getElementById("article-title");
@@ -92,7 +93,9 @@ function renderResults(payload) {
   } else {
     for (const item of motivations) {
       const li = document.createElement("li");
-      li.textContent = `${item.factor || "Unknown factor"}: ${item.impact || "No details."}`;
+      const strength = normalizeStrength(item.evidence_strength);
+      const hint = item.evidence_hint || "No specific basis provided.";
+      li.innerHTML = `<strong>${escapeHtml(item.factor || "Unknown factor")}</strong>: ${escapeHtml(item.impact || "No details.")}<br><em>Why this estimate:</em> ${escapeHtml(hint)}<br><em>Evidence strength:</em> <span class="tag ${strength}">${escapeHtml(strength)}</span>`;
       motivationsEl.appendChild(li);
     }
   }
@@ -206,11 +209,14 @@ async function parseApiResponse(response) {
 }
 
 function renderDebug(debugPayload) {
+  const authorSource = debugPayload?.extra?.author_source || "unknown";
+  debugLineEl.textContent = `Author detection source: ${authorSource}`;
   debugOutputEl.textContent = JSON.stringify(debugPayload, null, 2);
   debugPanelEl.classList.remove("hidden");
 }
 
 function clearDebug() {
+  debugLineEl.textContent = "";
   debugOutputEl.textContent = "";
   debugPanelEl.classList.add("hidden");
 }
@@ -222,6 +228,11 @@ function isLikelyHttpUrl(input) {
   } catch {
     return false;
   }
+}
+
+function normalizeStrength(value) {
+  const normalized = String(value || "").toLowerCase();
+  return ["high", "medium", "low"].includes(normalized) ? normalized : "low";
 }
 
 function escapeHtml(value) {

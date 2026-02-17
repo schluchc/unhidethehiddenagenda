@@ -51,6 +51,7 @@ export async function onRequestPost(context) {
     if (debugEnabled) {
       payload.debug = trace.finish({
         article_chars: article.text_excerpt.length,
+        author_source: article.author_source,
         model: providerConfig.model,
         base_url: providerConfig.baseUrl
       });
@@ -117,11 +118,8 @@ async function fetchArticle(url, trace, env) {
     /<title[^>]*>([^<]+)<\/title>/i
   ]);
 
-  const author = getFirstMatch(html, [
-    /<meta\s+name=["']author["']\s+content=["']([^"']+)["']/i,
-    /<meta\s+property=["']article:author["']\s+content=["']([^"']+)["']/i,
-    /\bby\s+([A-Z][A-Za-z\-.'\s]{1,80})/i
-  ]);
+  const authorResult = extractAuthor(html);
+  const author = authorResult.name;
 
   const articleText = extractReadableText(html).slice(0, 12000);
 
@@ -137,13 +135,15 @@ async function fetchArticle(url, trace, env) {
   trace.mark("article_parsed", {
     html_chars: html.length,
     text_chars: articleText.length,
-    author_detected: Boolean(author)
+    author_detected: author !== "Unknown author",
+    author_source: authorResult.source
   });
 
   return {
     url,
     title: title || "Unknown title",
     author: author || "Unknown author",
+    author_source: authorResult.source,
     text_excerpt: articleText
   };
 }
@@ -161,13 +161,19 @@ Instructions:
 - Focus on motivations that might impact honesty: affiliations, current/previous employers, funding incentives, political incentives, reputational pressure, legal pressure, fear, or career incentives.
 - If evidence is weak, state uncertainty clearly.
 - Avoid definitive accusations.
+- For each motivation, include a short \"evidence_hint\" that explains what this estimate is based on (e.g., article wording pattern, publication framing, known role history, or explicit uncertainty).
 - Extract 4-8 key claim sentences from the article excerpt and connect each to a caveat.
 
 Return STRICT JSON only with this schema:
 {
   "author_profile": "short paragraph",
   "motivations": [
-    {"factor": "string", "impact": "string", "evidence_strength": "high|medium|low"}
+    {
+      "factor": "string",
+      "impact": "string",
+      "evidence_strength": "high|medium|low",
+      "evidence_hint": "string"
+    }
   ],
   "key_claim_checks": [
     {
@@ -402,6 +408,120 @@ function safeSnippet(text) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 240);
+}
+
+function sanitizeAuthor(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "Unknown author";
+
+  const collapsed = raw
+    .replace(/\s+/g, " ")
+    .replace(/^(?:by|written by|author)\s*:?\s+/i, "")
+    .split(/\s+\|\s+|\s+-\s+|\s+\/\s+/)[0]
+    .trim();
+  const lowered = collapsed.toLowerCase();
+  if (["now", "today", "opinion", "staff", "admin", "team", "editor"].includes(lowered)) {
+    return "Unknown author";
+  }
+
+  // Avoid fragments like section names or timestamps posing as a name.
+  if (collapsed.length < 3 || collapsed.length > 80 || /\d/.test(collapsed)) {
+    return "Unknown author";
+  }
+
+  return collapsed;
+}
+
+function extractAuthor(html) {
+  const candidates = [];
+
+  // Common meta author forms across publishers.
+  candidates.push({
+    source: "meta",
+    value: getFirstMatch(html, [
+      /<meta\s+name=["']author["'][^>]*content=["']([^"']+)["'][^>]*>/i,
+      /<meta\s+content=["']([^"']+)["'][^>]*name=["']author["'][^>]*>/i,
+      /<meta\s+property=["']article:author["'][^>]*content=["']([^"']+)["'][^>]*>/i,
+      /<meta\s+content=["']([^"']+)["'][^>]*property=["']article:author["'][^>]*>/i
+    ])
+  });
+
+  // Structured metadata is often more reliable than visible byline text.
+  for (const value of extractAuthorsFromJsonLd(html)) {
+    candidates.push({ source: "jsonld", value });
+  }
+
+  // Visible byline fallback.
+  candidates.push({
+    source: "byline",
+    value: getFirstMatch(html, [
+      /\b(?:by|written by|author)\s*:?\s*([A-Z][A-Za-z.'-]+(?:\s+[A-Za-z][A-Za-z.'-]+){0,4})\b/i
+    ])
+  });
+
+  for (const candidate of candidates) {
+    const cleaned = sanitizeAuthor(candidate.value);
+    if (cleaned !== "Unknown author") {
+      return { name: cleaned, source: candidate.source };
+    }
+  }
+
+  return { name: "Unknown author", source: "unknown" };
+}
+
+function extractAuthorsFromJsonLd(html) {
+  const results = [];
+  const regex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match;
+
+  while ((match = regex.exec(html)) !== null) {
+    const raw = match[1]?.trim();
+    if (!raw) continue;
+
+    const parsed = tryParseJson(raw);
+    if (!parsed) continue;
+
+    collectAuthorNames(parsed, results);
+  }
+
+  return results;
+}
+
+function tryParseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Some pages include malformed or HTML-escaped JSON-LD; ignore safely.
+    return null;
+  }
+}
+
+function collectAuthorNames(node, results) {
+  if (!node) return;
+
+  if (Array.isArray(node)) {
+    for (const item of node) collectAuthorNames(item, results);
+    return;
+  }
+
+  if (typeof node !== "object") return;
+
+  if (typeof node.author === "string") {
+    results.push(node.author);
+  } else if (Array.isArray(node.author)) {
+    for (const author of node.author) {
+      if (typeof author === "string") results.push(author);
+      if (author && typeof author === "object" && typeof author.name === "string") {
+        results.push(author.name);
+      }
+    }
+  } else if (node.author && typeof node.author === "object" && typeof node.author.name === "string") {
+    results.push(node.author.name);
+  }
+
+  if (Array.isArray(node["@graph"])) {
+    for (const item of node["@graph"]) collectAuthorNames(item, results);
+  }
 }
 
 function parseJsonFromModel(text) {
