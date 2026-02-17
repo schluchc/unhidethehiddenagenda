@@ -76,6 +76,10 @@ APERTUS_MODEL=swiss-ai/apertus-8b-instruct
 APERTUS_API_BASE_URL=https://api.publicai.co/v1/chat/completions
 APERTUS_USER_AGENT=truth-check/0.1
 DEBUG_ANALYZE=1
+SUPPLEMENTAL_MAX_PAGES=5
+SUPPLEMENTAL_TIMEOUT_MS=12000
+PUBLISHER_SEARCH_MAX_PAGES=6
+PUBLISHER_SEARCH_TIMEOUT_MS=10000
 ```
 
 Debugging:
@@ -83,6 +87,13 @@ Debugging:
 - End user progress is shown in the UI while analysis runs.
 - Enable `Enable developer debug details` in the form to include server timing/events in the response.
 - You can force debug on all requests by setting `DEBUG_ANALYZE=1`.
+
+Expanded context retrieval:
+
+- Before calling the model, the backend also fetches likely publisher context pages (`/about`, `/masthead`, `/staff`, etc.) and likely author profile pages on the same domain.
+- This is used to improve checks for affiliation, country of residence, and publisher lead editor/redactor.
+- If lead editor/redactor is still unclear, the backend runs an additional publisher-focused crawl (homepage + discovered editorial/team links) and adds that context to the model prompt.
+- If this causes latency, reduce `SUPPLEMENTAL_MAX_PAGES`, `SUPPLEMENTAL_TIMEOUT_MS`, `PUBLISHER_SEARCH_MAX_PAGES`, or `PUBLISHER_SEARCH_TIMEOUT_MS`.
 
 ## Deploy via GitHub to Cloudflare Pages
 

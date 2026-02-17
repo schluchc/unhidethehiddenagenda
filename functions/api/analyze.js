@@ -1,6 +1,10 @@
 const DEFAULT_APERTUS_URL = "https://api.publicai.co/v1/chat/completions";
 const DEFAULT_ARTICLE_TIMEOUT_MS = 20000;
 const DEFAULT_MODEL_TIMEOUT_MS = 65000;
+const DEFAULT_SUPPLEMENTAL_TIMEOUT_MS = 12000;
+const DEFAULT_SUPPLEMENTAL_MAX_PAGES = 5;
+const DEFAULT_PUBLISHER_SEARCH_TIMEOUT_MS = 10000;
+const DEFAULT_PUBLISHER_SEARCH_MAX_PAGES = 6;
 
 export async function onRequestPost(context) {
   const corsHeaders = {
@@ -55,6 +59,11 @@ export async function onRequestPost(context) {
         analysis_subject: article.author,
         extracted_author: article.extracted_author,
         extracted_author_source: article.extracted_author_source,
+        supplemental_checked_urls: article.supplemental_context?.checked_urls || [],
+        supplemental_usable_pages: article.supplemental_context?.chunks?.length || 0,
+        publisher_search_triggered: article.publisher_search_context?.triggered || false,
+        publisher_search_checked_urls: article.publisher_search_context?.checked_urls || [],
+        publisher_search_usable_pages: article.publisher_search_context?.chunks?.length || 0,
         model: providerConfig.model,
         base_url: providerConfig.baseUrl
       });
@@ -120,6 +129,10 @@ async function fetchArticle(url, trace, env) {
     /<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i,
     /<title[^>]*>([^<]+)<\/title>/i
   ]);
+  const publisherName = getFirstMatch(html, [
+    /<meta\s+property=["']og:site_name["']\s+content=["']([^"']+)["']/i,
+    /<meta\s+name=["']application-name["']\s+content=["']([^"']+)["']/i
+  ]);
 
   const authorResult = extractAuthor(html);
   const subjectResult = resolveAnalysisSubject(title || "", authorResult);
@@ -136,50 +149,95 @@ async function fetchArticle(url, trace, env) {
     );
   }
 
+  const supplementalContext = await gatherSupplementalContext(url, html, author, trace, env);
+  const baseContextText = [articleText, buildSupplementalContextForPrompt({ supplemental_context: supplementalContext })].join("\n\n");
+  const publisherSearchContext = hasLeadEditorSignal(baseContextText)
+    ? { triggered: false, checked_urls: [], chunks: [] }
+    : await gatherPublisherSearchContext(url, trace, env);
+
   trace.mark("article_parsed", {
     html_chars: html.length,
     text_chars: articleText.length,
     author_detected: author !== "Unknown author",
     author_source: subjectResult.source,
     extracted_author: authorResult.name,
-    extracted_author_source: authorResult.source
+    extracted_author_source: authorResult.source,
+    supplemental_pages_checked: supplementalContext.checked_urls.length,
+    supplemental_pages_usable: supplementalContext.chunks.length,
+    publisher_search_triggered: publisherSearchContext.triggered,
+    publisher_search_pages_checked: publisherSearchContext.checked_urls.length,
+    publisher_search_pages_usable: publisherSearchContext.chunks.length
   });
 
   return {
     url,
     title: title || "Unknown title",
+    publisher_name: publisherName || "Unknown publisher",
     author: author || "Unknown author",
     author_source: subjectResult.source,
     extracted_author: authorResult.name,
     extracted_author_source: authorResult.source,
-    text_excerpt: articleText
+    text_excerpt: articleText,
+    supplemental_context: supplementalContext,
+    publisher_search_context: publisherSearchContext
   };
 }
 
 async function analyzeWithModel(article, providerConfig, trace, env) {
   const systemPrompt =
     "You produce cautious, evidence-aware analysis as strict JSON. No markdown, no extra keys.";
+  const supplementalContextText = buildSupplementalContextForPrompt(article);
+  const publisherSearchContextText = buildPublisherSearchContextForPrompt(article);
   const prompt = `You are an investigative analyst.
 Task: assess potential author motivations or bias pressures for a specific article.
 
 Article title: ${article.title}
+Publisher: ${article.publisher_name || "Unknown publisher"}
 Author: ${article.author}
 Analysis subject (must remain consistent): ${article.author}
 Article URL: ${article.url}
 Article excerpt:\n${article.text_excerpt}
+\nSupplemental context from publisher/author pages:\n${supplementalContextText}
+\nPublisher-focused search context (used when editor/redactor is unclear):\n${publisherSearchContextText}
 
 Instructions:
 - Analyze the exact Analysis subject above as the primary subject throughout the output.
 - Do not switch the primary subject to another person/entity even if other names appear.
+- Must check and report:
+  1) author current and former affiliations (also political affiliations),
+  2) author likely country of residence (or explicitly uncertain),
+  3) publisher lead editor and political affiliations (or explicitly uncertain).
+- If publisher lead editor/redactor is unclear from article content, prioritize evidence in Publisher-focused search context and state that this fallback search was used.
 - Focus on motivations that might impact honesty: affiliations, current/previous employers, funding incentives, political incentives, reputational pressure, legal pressure, fear, or career incentives.
 - If evidence is weak, state uncertainty clearly.
 - Avoid definitive accusations.
-- For each motivation, include a short \"evidence_hint\" that explains what this estimate is based on (e.g., article wording pattern, publication framing, known role history, or explicit uncertainty).
+- For each motivation, include a short \"evidence_hint\" that explains this hint's evidence is based on (e.g., article wording pattern, publication framing, known role history, or explicit uncertainty).
 - Extract 4-8 key claim sentences from the article excerpt and connect each to a caveat.
 
 Return STRICT JSON only with this schema:
 {
   "author_profile": "short paragraph",
+  "background_checks": {
+    "author_affiliations": [
+      {
+        "name": "string",
+        "relationship": "current|former|unknown",
+        "evidence_hint": "string",
+        "confidence": "high|medium|low"
+      }
+    ],
+    "author_country_of_residence": {
+      "country": "string or Unknown",
+      "evidence_hint": "string",
+      "confidence": "high|medium|low"
+    },
+    "publisher_lead_editor_or_redactor": {
+      "name": "string or Unknown",
+      "role": "string",
+      "evidence_hint": "string",
+      "confidence": "high|medium|low"
+    }
+  },
   "motivations": [
     {
       "factor": "string",
@@ -504,6 +562,288 @@ function extractAuthor(html) {
   }
 
   return { name: "Unknown author", source: "unknown" };
+}
+
+async function gatherSupplementalContext(articleUrl, articleHtml, author, trace, env) {
+  const maxPages = Math.max(
+    1,
+    Math.floor(parseTimeout(env.SUPPLEMENTAL_MAX_PAGES, DEFAULT_SUPPLEMENTAL_MAX_PAGES))
+  );
+  const timeoutMs = parseTimeout(env.SUPPLEMENTAL_TIMEOUT_MS, DEFAULT_SUPPLEMENTAL_TIMEOUT_MS);
+  const origin = new URL(articleUrl).origin;
+
+  const candidates = new Set();
+  for (const path of [
+    "/about",
+    "/about-us",
+    "/masthead",
+    "/staff",
+    "/team",
+    "/editorial",
+    "/imprint"
+  ]) {
+    candidates.add(`${origin}${path}`);
+  }
+
+  for (const link of extractAuthorProfileLinks(articleHtml, articleUrl, author)) {
+    candidates.add(link);
+  }
+
+  const targets = [...candidates].slice(0, maxPages);
+  const results = await Promise.allSettled(
+    targets.map((target) =>
+      fetchWithTimeout(
+        target,
+        {
+          headers: {
+            "User-Agent": "truth-check-bot/0.1"
+          }
+        },
+        timeoutMs,
+        "Supplemental fetch"
+      )
+    )
+  );
+
+  const chunks = [];
+  for (let i = 0; i < results.length; i += 1) {
+    const res = results[i];
+    const url = targets[i];
+    if (res.status !== "fulfilled") continue;
+    if (!res.value.ok) continue;
+
+    const html = await res.value.text().catch(() => "");
+    const text = extractReadableText(html).slice(0, 2500);
+    if (text.length < 250) continue;
+
+    const pathLabel = new URL(url).pathname || "/";
+    chunks.push({
+      url,
+      label: pathLabel,
+      text_excerpt: text
+    });
+  }
+
+  trace.mark("supplemental_context_collected", {
+    checked: targets.length,
+    usable: chunks.length,
+    urls: targets
+  });
+
+  return { checked_urls: targets, chunks };
+}
+
+function extractAuthorProfileLinks(html, articleUrl, author) {
+  const base = new URL(articleUrl);
+  const slugParts = String(author || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  const links = [];
+
+  const hrefRegex = /href=["']([^"']+)["']/gi;
+  let match;
+  while ((match = hrefRegex.exec(html)) !== null) {
+    const href = match[1];
+    if (!href || href.startsWith("mailto:") || href.startsWith("#")) continue;
+
+    let resolved;
+    try {
+      resolved = new URL(href, base).toString();
+    } catch {
+      continue;
+    }
+
+    if (!resolved.startsWith(base.origin)) continue;
+    const lower = resolved.toLowerCase();
+    const likelyAuthorPage =
+      lower.includes("/author/") ||
+      lower.includes("/authors/") ||
+      lower.includes("/profile/") ||
+      lower.includes("/people/") ||
+      slugParts.some((part) => part.length > 2 && lower.includes(part));
+
+    if (likelyAuthorPage) {
+      links.push(resolved);
+    }
+    if (links.length >= 4) break;
+  }
+
+  return dedupeStrings(links);
+}
+
+function buildSupplementalContextForPrompt(article) {
+  const chunks = article?.supplemental_context?.chunks || [];
+  if (chunks.length === 0) {
+    return "No supplemental pages could be reliably fetched.";
+  }
+
+  return chunks
+    .slice(0, 4)
+    .map((chunk, index) => {
+      return `Source ${index + 1} (${chunk.label}): ${chunk.url}\n${chunk.text_excerpt}`;
+    })
+    .join("\n\n");
+}
+
+async function gatherPublisherSearchContext(articleUrl, trace, env) {
+  const maxPages = Math.max(
+    1,
+    Math.floor(parseTimeout(env.PUBLISHER_SEARCH_MAX_PAGES, DEFAULT_PUBLISHER_SEARCH_MAX_PAGES))
+  );
+  const timeoutMs = parseTimeout(
+    env.PUBLISHER_SEARCH_TIMEOUT_MS,
+    DEFAULT_PUBLISHER_SEARCH_TIMEOUT_MS
+  );
+  const origin = new URL(articleUrl).origin;
+  const homepageUrl = `${origin}/`;
+
+  const checkedUrls = [homepageUrl];
+  const homepageResponse = await fetchWithTimeout(
+    homepageUrl,
+    {
+      headers: {
+        "User-Agent": "truth-check-bot/0.1"
+      }
+    },
+    timeoutMs,
+    "Publisher search fetch"
+  ).catch(() => null);
+
+  const homepageHtml =
+    homepageResponse && homepageResponse.ok ? await homepageResponse.text().catch(() => "") : "";
+
+  const candidateUrls = new Set();
+  for (const path of [
+    "/masthead",
+    "/editorial",
+    "/editorial-team",
+    "/editors",
+    "/about",
+    "/about-us",
+    "/staff",
+    "/team",
+    "/leadership",
+    "/imprint"
+  ]) {
+    candidateUrls.add(`${origin}${path}`);
+  }
+
+  for (const discovered of extractPublisherSearchLinks(homepageHtml, homepageUrl)) {
+    candidateUrls.add(discovered);
+  }
+
+  const targets = [...candidateUrls].slice(0, maxPages);
+  const results = await Promise.allSettled(
+    targets.map((target) =>
+      fetchWithTimeout(
+        target,
+        {
+          headers: {
+            "User-Agent": "truth-check-bot/0.1"
+          }
+        },
+        timeoutMs,
+        "Publisher search fetch"
+      )
+    )
+  );
+
+  const chunks = [];
+  for (let i = 0; i < results.length; i += 1) {
+    checkedUrls.push(targets[i]);
+    const res = results[i];
+    if (res.status !== "fulfilled") continue;
+    if (!res.value.ok) continue;
+
+    const html = await res.value.text().catch(() => "");
+    const text = extractReadableText(html).slice(0, 2800);
+    if (text.length < 220) continue;
+
+    const label = new URL(targets[i]).pathname || "/";
+    chunks.push({
+      url: targets[i],
+      label,
+      text_excerpt: text
+    });
+  }
+
+  trace.mark("publisher_search_context_collected", {
+    checked: checkedUrls.length,
+    usable: chunks.length,
+    urls: checkedUrls
+  });
+
+  return {
+    triggered: true,
+    checked_urls: dedupeStrings(checkedUrls),
+    chunks
+  };
+}
+
+function hasLeadEditorSignal(text) {
+  const normalized = String(text || "").toLowerCase();
+  if (!normalized) return false;
+
+  return [
+    "editor in chief",
+    "editor-in-chief",
+    "managing editor",
+    "executive editor",
+    "lead editor",
+    "redaktor",
+    "redactor"
+  ].some((term) => normalized.includes(term));
+}
+
+function extractPublisherSearchLinks(html, baseUrl) {
+  if (!html) return [];
+  const base = new URL(baseUrl);
+  const links = [];
+  const keywordPattern = /(editor|masthead|staff|team|about|leadership|imprint)/i;
+  const hrefRegex = /href=["']([^"']+)["']/gi;
+
+  let match;
+  while ((match = hrefRegex.exec(html)) !== null) {
+    const href = match[1];
+    if (!href || href.startsWith("#") || href.startsWith("mailto:")) continue;
+
+    let resolved;
+    try {
+      resolved = new URL(href, base).toString();
+    } catch {
+      continue;
+    }
+
+    if (!resolved.startsWith(base.origin)) continue;
+    if (!keywordPattern.test(resolved)) continue;
+
+    links.push(resolved);
+    if (links.length >= 8) break;
+  }
+
+  return dedupeStrings(links);
+}
+
+function buildPublisherSearchContextForPrompt(article) {
+  const context = article?.publisher_search_context;
+  if (!context?.triggered) {
+    return "Fallback publisher-focused search was not needed.";
+  }
+  if (!context?.chunks?.length) {
+    return "Fallback publisher-focused search was attempted but returned no usable pages.";
+  }
+
+  return context.chunks
+    .slice(0, 5)
+    .map((chunk, index) => {
+      return `Publisher source ${index + 1} (${chunk.label}): ${chunk.url}\n${chunk.text_excerpt}`;
+    })
+    .join("\n\n");
+}
+
+function dedupeStrings(values) {
+  return [...new Set(values.filter(Boolean))];
 }
 
 function extractAuthorsFromJsonLd(html) {
