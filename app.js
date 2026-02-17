@@ -13,7 +13,6 @@ const debugLineEl = document.getElementById("debug-line");
 const debugOutputEl = document.getElementById("debug-output");
 
 const articleTitleEl = document.getElementById("article-title");
-const articleAuthorEl = document.getElementById("article-author");
 const articleLinkEl = document.getElementById("article-link");
 const authorProfileEl = document.getElementById("author-profile");
 const motivationsEl = document.getElementById("motivations");
@@ -79,7 +78,6 @@ function renderResults(payload) {
   const { article, analysis } = payload;
 
   articleTitleEl.textContent = article.title || "Unknown";
-  articleAuthorEl.textContent = article.author || "Unknown";
   articleLinkEl.textContent = article.url;
   articleLinkEl.href = article.url;
 
@@ -210,7 +208,12 @@ async function parseApiResponse(response) {
 
 function renderDebug(debugPayload) {
   const authorSource = debugPayload?.extra?.author_source || "unknown";
-  debugLineEl.textContent = `Author detection source: ${authorSource}`;
+  const extractedAuthor = debugPayload?.extra?.extracted_author || "Unknown author";
+  const extractedSource = debugPayload?.extra?.extracted_author_source || "unknown";
+  const analysisSubject = debugPayload?.extra?.analysis_subject || "Unknown author";
+  debugLineEl.textContent =
+    `Analysis subject: ${analysisSubject} (source: ${authorSource}) | ` +
+    `Extracted author: ${extractedAuthor} (source: ${extractedSource})`;
   debugOutputEl.textContent = JSON.stringify(debugPayload, null, 2);
   debugPanelEl.classList.remove("hidden");
 }

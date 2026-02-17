@@ -52,6 +52,9 @@ export async function onRequestPost(context) {
       payload.debug = trace.finish({
         article_chars: article.text_excerpt.length,
         author_source: article.author_source,
+        analysis_subject: article.author,
+        extracted_author: article.extracted_author,
+        extracted_author_source: article.extracted_author_source,
         model: providerConfig.model,
         base_url: providerConfig.baseUrl
       });
@@ -119,7 +122,8 @@ async function fetchArticle(url, trace, env) {
   ]);
 
   const authorResult = extractAuthor(html);
-  const author = authorResult.name;
+  const subjectResult = resolveAnalysisSubject(title || "", authorResult);
+  const author = subjectResult.name;
 
   const articleText = extractReadableText(html).slice(0, 12000);
 
@@ -136,28 +140,37 @@ async function fetchArticle(url, trace, env) {
     html_chars: html.length,
     text_chars: articleText.length,
     author_detected: author !== "Unknown author",
-    author_source: authorResult.source
+    author_source: subjectResult.source,
+    extracted_author: authorResult.name,
+    extracted_author_source: authorResult.source
   });
 
   return {
     url,
     title: title || "Unknown title",
     author: author || "Unknown author",
-    author_source: authorResult.source,
+    author_source: subjectResult.source,
+    extracted_author: authorResult.name,
+    extracted_author_source: authorResult.source,
     text_excerpt: articleText
   };
 }
 
 async function analyzeWithModel(article, providerConfig, trace, env) {
+  const systemPrompt =
+    "You produce cautious, evidence-aware analysis as strict JSON. No markdown, no extra keys.";
   const prompt = `You are an investigative analyst.
 Task: assess potential author motivations or bias pressures for a specific article.
 
 Article title: ${article.title}
 Author: ${article.author}
+Analysis subject (must remain consistent): ${article.author}
 Article URL: ${article.url}
 Article excerpt:\n${article.text_excerpt}
 
 Instructions:
+- Analyze the exact Analysis subject above as the primary subject throughout the output.
+- Do not switch the primary subject to another person/entity even if other names appear.
 - Focus on motivations that might impact honesty: affiliations, current/previous employers, funding incentives, political incentives, reputational pressure, legal pressure, fear, or career incentives.
 - If evidence is weak, state uncertainty clearly.
 - Avoid definitive accusations.
@@ -187,7 +200,9 @@ Return STRICT JSON only with this schema:
 
   trace.mark("model_request_started", {
     base_url: providerConfig.baseUrl,
-    model: providerConfig.model
+    model: providerConfig.model,
+    system_prompt: systemPrompt,
+    user_prompt: prompt
   });
 
   const timeoutMs = parseTimeout(env.AI_TIMEOUT_MS, DEFAULT_MODEL_TIMEOUT_MS);
@@ -204,11 +219,7 @@ Return STRICT JSON only with this schema:
         model: providerConfig.model,
         temperature: 0.2,
         messages: [
-          {
-            role: "system",
-            content:
-              "You produce cautious, evidence-aware analysis as strict JSON. No markdown, no extra keys."
-          },
+          { role: "system", content: systemPrompt },
           { role: "user", content: prompt }
         ]
       })
@@ -430,6 +441,32 @@ function sanitizeAuthor(value) {
   }
 
   return collapsed;
+}
+
+function resolveAnalysisSubject(title, authorResult) {
+  const interviewSubject = extractInterviewSubjectFromTitle(title);
+  if (interviewSubject !== "Unknown author") {
+    return { name: interviewSubject, source: "interview_title" };
+  }
+  return { name: authorResult.name, source: authorResult.source };
+}
+
+function extractInterviewSubjectFromTitle(title) {
+  const text = String(title || "").trim();
+  if (!text) return "Unknown author";
+
+  const match = text.match(/^(.*?)\binterview\b/i);
+  if (!match?.[1]) return "Unknown author";
+
+  const candidate = match[1]
+    .replace(/\s+/g, " ")
+    .replace(/[|:,\-–—]+$/g, "")
+    .trim();
+
+  if (!candidate) return "Unknown author";
+  if (candidate.split(/\s+/).length > 5) return "Unknown author";
+
+  return sanitizeAuthor(candidate);
 }
 
 function extractAuthor(html) {
