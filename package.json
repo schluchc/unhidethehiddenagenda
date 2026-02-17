@@ -1,0 +1,14 @@
+{
+  "name": "truth-check",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev . --compatibility-date=2025-01-15",
+    "dev:local": "node local-dev-server.mjs",
+    "deploy": "wrangler pages deploy ."
+  },
+  "devDependencies": {
+    "wrangler": "^4.51.1"
+  }
+}

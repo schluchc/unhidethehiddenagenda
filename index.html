@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Truth Check</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">Agenda visibility for readers</p>
+        <h1>Truth Check</h1>
+        <p class="subtitle">
+          Paste an article URL. Get a structured caveat report about possible author
+          motivations, affiliations, and pressure points.
+        </p>
+      </header>
+
+      <section class="panel">
+        <form id="analyze-form">
+          <label for="article-url">Article URL</label>
+          <div class="row">
+            <input
+              id="article-url"
+              name="url"
+              type="url"
+              placeholder="https://example.com/article"
+              required
+            />
+            <button id="submit-btn" type="submit">Analyze</button>
+          </div>
+          <label class="debug-toggle" for="debug-mode">
+            <input id="debug-mode" name="debug" type="checkbox" />
+            Enable developer debug details
+          </label>
+        </form>
+        <p class="hint">
+          This is a first-pass AI assessment and may include uncertainty. Always verify
+          critical claims manually.
+        </p>
+      </section>
+
+      <section id="status" class="status hidden"></section>
+      <section id="activity" class="activity hidden">
+        <p id="activity-text">Starting analysis...</p>
+        <div class="progress-track" aria-hidden="true">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+      </section>
+
+      <section id="results" class="results hidden">
+        <article class="card">
+          <h2>Article</h2>
+          <p><strong>Title:</strong> <span id="article-title">-</span></p>
+          <p><strong>Detected author:</strong> <span id="article-author">-</span></p>
+          <p>
+            <strong>Source URL:</strong>
+            <a id="article-link" href="#" rel="noopener noreferrer" target="_blank">-</a>
+          </p>
+        </article>
+
+        <article class="card">
+          <h2>Author Profile</h2>
+          <p id="author-profile">-</p>
+        </article>
+
+        <article class="card">
+          <h2>Potential Motivations / Influences</h2>
+          <ul id="motivations"></ul>
+        </article>
+
+        <article class="card">
+          <h2>Claim Caveats</h2>
+          <div id="caveats"></div>
+        </article>
+      </section>
+
+      <section id="debug-panel" class="card hidden">
+        <h2>Debug Details</h2>
+        <pre id="debug-output"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

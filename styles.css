@@ -1,0 +1,247 @@
+:root {
+  --bg: #f7f6f1;
+  --ink: #1c1c1a;
+  --muted: #68675f;
+  --accent: #c3562b;
+  --panel: #fffdf7;
+  --line: #d8d4c7;
+  --good: #2f6e4f;
+  --warn: #8a5b00;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Space Grotesk", sans-serif;
+  background:
+    radial-gradient(90rem 30rem at 100% -10%, #f3d4ba 0%, transparent 65%),
+    radial-gradient(70rem 22rem at -10% 0%, #d8e8dc 0%, transparent 55%),
+    var(--bg);
+}
+
+.shell {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2.2rem 1rem 4rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font: 700 3rem/1 "Fraunces", serif;
+  letter-spacing: -0.02em;
+}
+
+.eyebrow {
+  margin: 0 0 0.25rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  max-width: 62ch;
+  color: var(--muted);
+  margin-top: 0.5rem;
+}
+
+.panel,
+.card,
+.status {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.panel {
+  margin-top: 1.2rem;
+  padding: 1rem;
+}
+
+label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 0.6rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+input[type="url"] {
+  flex: 1;
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font: inherit;
+  background: #fff;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  background: var(--ink);
+  color: #fff;
+  padding: 0.7rem 1.05rem;
+  font: 600 0.95rem/1 "Space Grotesk", sans-serif;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.hint {
+  margin: 0.8rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.debug-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  font-size: 0.9rem;
+  margin-top: 0.8rem;
+  color: var(--muted);
+}
+
+.status {
+  margin-top: 1rem;
+  padding: 0.8rem 1rem;
+}
+
+.status.info {
+  border-color: #b9c7c2;
+}
+
+.status.error {
+  border-color: #e3b8aa;
+  color: #8e2e16;
+}
+
+.activity {
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  padding: 0.8rem 1rem;
+}
+
+#activity-text {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.progress-track {
+  height: 8px;
+  margin-top: 0.6rem;
+  border-radius: 999px;
+  background: #ece8db;
+  overflow: hidden;
+}
+
+.progress-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d78544, #c3562b);
+  transition: width 0.35s ease;
+}
+
+.results {
+  margin-top: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.card {
+  padding: 1rem;
+}
+
+.card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+.card p {
+  margin: 0.5rem 0;
+}
+
+#motivations {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.caveat {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: #fff;
+}
+
+.caveat p {
+  margin: 0.45rem 0;
+}
+
+.tag {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.12rem 0.48rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  margin-left: 0.3rem;
+}
+
+.tag.high {
+  color: var(--good);
+  background: #dff1e7;
+}
+
+.tag.medium {
+  color: var(--warn);
+  background: #faedcf;
+}
+
+.tag.low {
+  color: #8a3535;
+  background: #fbe0e0;
+}
+
+.hidden {
+  display: none;
+}
+
+#debug-output {
+  margin: 0;
+  font: 0.8rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 700px) {
+  .hero h1 {
+    font-size: 2.3rem;
+  }
+
+  .row {
+    flex-direction: column;
+  }
+
+  button {
+    width: 100%;
+  }
+}
