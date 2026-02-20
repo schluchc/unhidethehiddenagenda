@@ -207,10 +207,8 @@ function renderResults(payload) {
   articleLinkEl.textContent = article.url;
   articleLinkEl.href = article.url;
 
-  const residence = analysis.background_checks?.author_country_of_residence || {};
-  const residenceText = residence.country ? ` ${t("authorResidence")}: ${residence.country}.` : "";
   const authorProfileLink = renderProfileLink(analysis.author_profile_evidence_url);
-  authorProfileEl.innerHTML = `${escapeHtml(analysis.author_profile || t("noProfile"))}${escapeHtml(residenceText)}${authorProfileLink}`;
+  authorProfileEl.innerHTML = `${escapeHtml(analysis.author_profile || t("noProfile"))}${authorProfileLink}`;
   renderBackgroundChecks(
     analysis.background_checks || {},
     analysis.publisher_profile || "",

@@ -440,7 +440,7 @@ function resolveModelProvider(env) {
   return {
     apiKey: env.APERTUS_API_KEY || env.AI_API_KEY || env.OPENAI_API_KEY || "",
     baseUrl: env.AI_API_BASE_URL || env.APERTUS_API_BASE_URL || DEFAULT_APERTUS_URL,
-    model: env.AI_MODEL || env.APERTUS_MODEL || env.OPENAI_MODEL || "swiss-ai/apertus-70b-instruct",
+    model: env.AI_MODEL || env.APERTUS_MODEL || env.OPENAI_MODEL || "swiss-ai/apertus-8b-instruct",
     userAgent: env.AI_USER_AGENT || env.APERTUS_USER_AGENT || "truth-check/0.1"
   };
 }
