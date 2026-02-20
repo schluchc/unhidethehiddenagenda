@@ -60,7 +60,7 @@ Open the local URL shown by Wrangler.
 
 ### 3) Full local stack without Cloudflare login
 
-If you cannot log into Cloudflare right now, run the built-in local server:
+Run the built-in local server:
 
 ```bash
 npm install
@@ -93,6 +93,7 @@ Expanded context retrieval:
 - Before calling the model, the backend also fetches likely publisher context pages (`/about`, `/masthead`, `/staff`, etc.) and likely author profile pages on the same domain.
 - This is used to improve checks for affiliation, country of residence, and publisher lead editor/redactor.
 - If lead editor/redactor is still unclear, the backend runs an additional publisher-focused crawl (homepage + discovered editorial/team links) and adds that context to the model prompt.
+- The analysis runs in two LLM steps: author-first, then publisher background (lead editor + funding/ownership signals), which are merged into the final report.
 - If this causes latency, reduce `SUPPLEMENTAL_MAX_PAGES`, `SUPPLEMENTAL_TIMEOUT_MS`, `PUBLISHER_SEARCH_MAX_PAGES`, or `PUBLISHER_SEARCH_TIMEOUT_MS`.
 
 ## Deploy via GitHub to Cloudflare Pages

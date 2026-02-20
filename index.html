@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Truth Check</title>
+    <title id="page-title">Unhide the hidden agenda</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,26 +15,32 @@
   <body>
     <main class="shell">
       <header class="hero">
-        <p class="eyebrow">AI-assisted source skepticism</p>
-        <h1>Truth Check</h1>
-        <p class="subtitle">
+        <div class="hero-top">
+          <p class="eyebrow" id="eyebrow">AI-assisted source skepticism</p>
+          <div class="lang-toggle" role="group" aria-label="Language">
+            <button class="lang-btn" type="button" data-lang="de">DE</button>
+            <button class="lang-btn" type="button" data-lang="en">EN</button>
+          </div>
+        </div>
+        <h1>Unhide the Hidden Agenda</h1>
+        <p class="subtitle" id="subtitle">
           Paste an article URL. Get possible author motivations, affiliations, and pressure points.
         </p>
-        <section class="quote-card">
-          <p class="quote-text">
+        <!--<section class="quote-card">
+          <p class="quote-text" id="quote-text">
             If you're not amazed by AI, you don't
             really understand it. If you're not afraid of AI, you don't really understand
             it.
           </p>
-          <p class="quote-source">
+          <p class="quote-source" id="quote-source">
             Mustafa Suleyman, CEO Microsoft AI & Co-Founder Deepmind
           </p>
-        </section>
+        </section>-->
       </header>
 
       <section class="panel">
         <form id="analyze-form">
-          <label for="article-url">Article URL</label>
+          <label id="label-article-url" for="article-url">Article URL</label>
           <div class="row">
             <input
               id="article-url"
@@ -47,10 +53,10 @@
           </div>
           <label class="debug-toggle" for="debug-mode">
             <input id="debug-mode" name="debug" type="checkbox" />
-            Enable developer debug details
+            <span id="label-debug-toggle">Enable developer debug details</span>
           </label>
         </form>
-        <p class="hint">
+        <p class="hint" id="hint">
           This is a first-pass AI assessment and may include uncertainty. Always verify
           critical claims manually.
         </p>
@@ -66,7 +72,7 @@
 
       <section id="results" class="results hidden">
         <article class="card">
-          <h2>Article</h2>
+          <h2 id="heading-article">Article</h2>
           <p><strong>Title:</strong> <span id="article-title">-</span></p>
           <p>
             <strong>Source URL:</strong>
@@ -75,31 +81,32 @@
         </article>
 
         <article class="card">
-          <h2>Author Profile</h2>
+          <h2 id="heading-author-profile">Author Profile</h2>
           <p id="author-profile">-</p>
         </article>
 
         <article class="card">
-          <h2>Background Checks</h2>
+          <h2 id="heading-background-checks">Background Checks</h2>
           <div id="background-checks"></div>
         </article>
 
         <article class="card">
-          <h2>Potential Motivations / Influences</h2>
+          <h2 id="heading-motivations">Potential Motivations / Influences</h2>
           <ul id="motivations"></ul>
         </article>
 
         <article class="card">
-          <h2>Claim Caveats</h2>
+          <h2 id="heading-caveats">Claim Caveats</h2>
           <div id="caveats"></div>
         </article>
       </section>
 
       <section id="debug-panel" class="card hidden">
-        <h2>Debug Details</h2>
+        <h2 id="heading-debug">Debug Details</h2>
         <p id="debug-line" class="debug-line"></p>
         <pre id="debug-output"></pre>
       </section>
+
     </main>
 
     <script type="module" src="app.js"></script>

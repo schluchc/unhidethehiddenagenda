@@ -23,6 +23,7 @@ export async function onRequestPost(context) {
     trace.mark("request_received");
 
     const articleUrl = (body.url || "").trim();
+    const language = normalizeLanguage(body.lang || body.language);
     if (!isLikelyHttpUrl(articleUrl)) {
       return json({ error: "Invalid URL. Use a full http(s) URL." }, 400, corsHeaders);
     }
@@ -45,7 +46,7 @@ export async function onRequestPost(context) {
     });
 
     const article = await fetchArticle(articleUrl, trace, env);
-    const analysis = await analyzeWithModel(article, providerConfig, trace, env);
+    const analysis = await analyzeWithModel(article, providerConfig, trace, env, language);
 
     trace.mark("analysis_complete", {
       author_detected: article.author !== "Unknown author"
@@ -65,6 +66,7 @@ export async function onRequestPost(context) {
         publisher_search_triggered: article.publisher_search_context?.triggered || false,
         publisher_search_checked_urls: article.publisher_search_context?.checked_urls || [],
         publisher_search_usable_pages: article.publisher_search_context?.chunks?.length || 0,
+        language,
         model: providerConfig.model,
         base_url: providerConfig.baseUrl
       });
@@ -156,7 +158,6 @@ async function fetchArticle(url, trace, env) {
   const publisherSearchContext = hasLeadEditorSignal(baseContextText)
     ? { triggered: false, checked_urls: [], chunks: [] }
     : await gatherPublisherSearchContext(url, trace, env);
-
   trace.mark("article_parsed", {
     html_chars: html.length,
     text_chars: articleText.length,
@@ -187,40 +188,61 @@ async function fetchArticle(url, trace, env) {
   };
 }
 
-async function analyzeWithModel(article, providerConfig, trace, env) {
-  const systemPrompt =
-    "You produce cautious, evidence-aware analysis as strict JSON. No markdown, no extra keys.";
+async function analyzeWithModel(article, providerConfig, trace, env, language) {
+  const authorStep = await analyzeAuthorStep(article, providerConfig, trace, env, language);
+  const publisherName =
+    authorStep?.publisher_name_guess ||
+    authorStep?.publisher_name ||
+    article.publisher_name ||
+    "Unknown publisher";
+  const publisherStep = await analyzePublisherStep(
+    article,
+    publisherName,
+    providerConfig,
+    trace,
+    env,
+    language
+  );
+
+  return mergeAuthorPublisherAnalysis(authorStep, publisherStep);
+}
+
+async function analyzeAuthorStep(article, providerConfig, trace, env, language) {
   const supplementalContextText = buildSupplementalContextForPrompt(article);
-  const publisherSearchContextText = buildPublisherSearchContextForPrompt(article);
+  const languageName = language === "de" ? "German" : "English";
+  const languageRule =
+    language === "de"
+      ? "Write ALL natural-language fields in German. Do not use English except when quoting the article."
+      : "Write ALL natural-language fields in English.";
+
   const prompt = `You are an investigative analyst.
-Task: assess potential author motivations or bias pressures for a specific article.
+Task: assess author background and motivations for a specific article.
 
 Article title: ${article.title}
-Publisher: ${article.publisher_name || "Unknown publisher"}
+Publisher (from metadata): ${article.publisher_name || "Unknown publisher"}
 Author: ${article.author}
-Analysis subject (must remain consistent): ${article.author}
 Article URL: ${article.url}
 Article excerpt:\n${article.text_excerpt}
 \nSupplemental context from publisher/author pages:\n${supplementalContextText}
-\nPublisher-focused search context (used when editor/redactor is unclear):\n${publisherSearchContextText}
+Output language: ${languageName}. All natural-language fields must be written in ${languageName}.
 
 Instructions:
-- Analyze the exact Analysis subject above as the primary subject throughout the output.
+- ${languageRule}
+- Analyze the exact Author above as the primary subject throughout the output.
 - Do not switch the primary subject to another person/entity even if other names appear.
-- Must check and report:
-  1) author current and former affiliations (also political affiliations),
-  2) author likely country of residence (or explicitly uncertain),
-  3) publisher lead editor and political affiliations (or explicitly uncertain).
-- If publisher lead editor/redactor is unclear from article content, prioritize evidence in Publisher-focused search context and state that this fallback search was used.
+- Identify the publisher name as best you can from the article metadata or context.
+- Provide a single best source URL for the author profile in "author_profile_evidence_url" when available.
 - Focus on motivations that might impact honesty: affiliations, current/previous employers, funding incentives, political incentives, reputational pressure, legal pressure, fear, or career incentives.
 - If evidence is weak, state uncertainty clearly.
 - Avoid definitive accusations.
-- For each motivation, include a short \"evidence_hint\" that explains this hint's evidence is based on (e.g., article wording pattern, publication framing, known role history, or explicit uncertainty).
-- Extract 4-8 key claim sentences from the article excerpt and connect each to a caveat.
+- For each motivation, include a short "evidence_hint" that explains the basis (e.g., article wording pattern, publication framing, known role history, or explicit uncertainty).
+- Extract 4-8 key claim sentences from the article excerpt and connect each to a caveat. Keep claim_sentence text in the original article language.
 
 Return STRICT JSON only with this schema:
 {
+  "publisher_name_guess": "string or Unknown",
   "author_profile": "short paragraph",
+  "author_profile_evidence_url": "string or empty",
   "background_checks": {
     "author_affiliations": [
       {
@@ -232,12 +254,6 @@ Return STRICT JSON only with this schema:
     ],
     "author_country_of_residence": {
       "country": "string or Unknown",
-      "evidence_hint": "string",
-      "confidence": "high|medium|low"
-    },
-    "publisher_lead_editor_or_redactor": {
-      "name": "string or Unknown",
-      "role": "string",
       "evidence_hint": "string",
       "confidence": "high|medium|low"
     }
@@ -260,11 +276,90 @@ Return STRICT JSON only with this schema:
   ]
 }`;
 
+  return runModelRequest(providerConfig, trace, env, prompt, "author_step");
+}
+
+async function analyzePublisherStep(article, publisherName, providerConfig, trace, env, language) {
+  const publisherSearchContextText = buildPublisherSearchContextForPrompt(article);
+  const supplementalContextText = buildSupplementalContextForPrompt(article);
+  const languageName = language === "de" ? "German" : "English";
+  const languageRule =
+    language === "de"
+      ? "Write ALL natural-language fields in German. Do not use English except when quoting the article."
+      : "Write ALL natural-language fields in English.";
+
+  const prompt = `You are an investigative analyst.
+Task: assess publisher background, leadership, and funding/ownership signals.
+
+Publisher: ${publisherName}
+Article URL: ${article.url}
+Publisher-focused search context (used when editor/redactor is unclear):\n${publisherSearchContextText}
+\nSupplemental context from publisher/author pages:\n${supplementalContextText}
+Output language: ${languageName}. All natural-language fields must be written in ${languageName}.
+
+Instructions:
+- ${languageRule}
+- Identify publisher lead editor/redactor if possible; otherwise state uncertainty explicitly.
+- Identify funding or ownership signals (owners, foundations, major sponsors, known funding bodies). If unclear, say so.
+- Use short evidence hints and confidence levels.
+- Provide a single best source URL for the publisher profile in "publisher_profile_evidence_url" when available.
+- Treat publisher self-descriptions as potentially biased. Prefer independent sources (e.g., Wikipedia, independent journalism) when available, and explicitly highlight where independent sources differ from publisher claims. If only publisher sources are available, state this clearly and lower confidence.
+
+Return STRICT JSON only with this schema:
+{
+  "publisher_profile": "short paragraph",
+  "publisher_profile_evidence_url": "string or empty",
+  "publisher_funding_sources": [
+    {
+      "name": "string",
+      "evidence_hint": "string",
+      "confidence": "high|medium|low"
+    }
+  ],
+  "publisher_lead_editor_or_redactor": {
+    "name": "string or Unknown",
+    "role": "string",
+    "evidence_hint": "string",
+    "confidence": "high|medium|low"
+  }
+}`;
+
+  return runModelRequest(providerConfig, trace, env, prompt, "publisher_step");
+}
+
+function mergeAuthorPublisherAnalysis(authorStep, publisherStep) {
+  const authorBackground = authorStep?.background_checks || {};
+  const mergedBackground = {
+    ...authorBackground,
+    publisher_lead_editor_or_redactor:
+      publisherStep?.publisher_lead_editor_or_redactor || {
+        name: "Unknown",
+        role: "unknown",
+        evidence_hint: "No details.",
+        confidence: "low"
+      },
+    publisher_funding_sources: publisherStep?.publisher_funding_sources || []
+  };
+
+  return {
+    author_profile: authorStep?.author_profile || "No profile generated by the model.",
+    author_profile_evidence_url: authorStep?.author_profile_evidence_url || "",
+    publisher_profile: publisherStep?.publisher_profile || "",
+    publisher_profile_evidence_url: publisherStep?.publisher_profile_evidence_url || "",
+    background_checks: mergedBackground,
+    motivations: authorStep?.motivations || [],
+    key_claim_checks: authorStep?.key_claim_checks || []
+  };
+}
+
+async function runModelRequest(providerConfig, trace, env, prompt, label) {
+  const systemPrompt =
+    "You produce cautious, evidence-aware analysis as strict JSON. No markdown, no extra keys.";
+
   trace.mark("model_request_started", {
     base_url: providerConfig.baseUrl,
     model: providerConfig.model,
-    system_prompt: systemPrompt,
-    user_prompt: prompt
+    stage: label
   });
 
   const timeoutMs = parseTimeout(env.AI_TIMEOUT_MS, DEFAULT_MODEL_TIMEOUT_MS);
@@ -334,7 +429,8 @@ Return STRICT JSON only with this schema:
   }
 
   trace.mark("model_response_parsed", {
-    provider_response_chars: responseText.length
+    provider_response_chars: responseText.length,
+    stage: label
   });
 
   return parsed;
@@ -344,7 +440,7 @@ function resolveModelProvider(env) {
   return {
     apiKey: env.APERTUS_API_KEY || env.AI_API_KEY || env.OPENAI_API_KEY || "",
     baseUrl: env.AI_API_BASE_URL || env.APERTUS_API_BASE_URL || DEFAULT_APERTUS_URL,
-    model: env.AI_MODEL || env.APERTUS_MODEL || env.OPENAI_MODEL || "swiss-ai/apertus-8b-instruct",
+    model: env.AI_MODEL || env.APERTUS_MODEL || env.OPENAI_MODEL || "swiss-ai/apertus-70b-instruct",
     userAgent: env.AI_USER_AGENT || env.APERTUS_USER_AGENT || "truth-check/0.1"
   };
 }
@@ -644,8 +740,13 @@ async function gatherSupplementalContext(articleUrl, articleHtml, author, trace,
     const url = targets[i];
     if (res.status !== "fulfilled") continue;
     if (!res.value.ok) continue;
+    if (!isHtmlResponse(res.value)) continue;
+    if (!isSameOrigin(res.value.url, origin)) continue;
 
     const html = await res.value.text().catch(() => "");
+    const backgroundCheck = runBackgroundCheck(url, html);
+    if (!backgroundCheck.ok) continue;
+
     const text = extractReadableText(html).slice(0, 2500);
     if (text.length < 250) continue;
 
@@ -788,8 +889,13 @@ async function gatherPublisherSearchContext(articleUrl, trace, env) {
     const res = results[i];
     if (res.status !== "fulfilled") continue;
     if (!res.value.ok) continue;
+    if (!isHtmlResponse(res.value)) continue;
+    if (!isSameOrigin(res.value.url, origin)) continue;
 
     const html = await res.value.text().catch(() => "");
+    const backgroundCheck = runBackgroundCheck(targets[i], html);
+    if (!backgroundCheck.ok) continue;
+
     const text = extractReadableText(html).slice(0, 2800);
     if (text.length < 220) continue;
 
@@ -877,6 +983,75 @@ function buildPublisherSearchContextForPrompt(article) {
 
 function dedupeStrings(values) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function isHtmlResponse(response) {
+  const contentType = response?.headers?.get("content-type") || "";
+  return contentType.toLowerCase().includes("text/html");
+}
+
+function isSameOrigin(finalUrl, origin) {
+  try {
+    return new URL(finalUrl).origin === origin;
+  } catch {
+    return false;
+  }
+}
+
+function runBackgroundCheck(url, html) {
+  if (!html) return { ok: false, reason: "empty_html" };
+  const text = extractReadableText(html);
+  if (text.length < 200) return { ok: false, reason: "too_short" };
+  if (hasBlockSignals(text)) return { ok: false, reason: "blocked_or_captcha" };
+
+  const expected = expectedKeywordsForPath(url);
+  if (expected.length > 0) {
+    const normalized = text.toLowerCase();
+    const hit = expected.some((keyword) => normalized.includes(keyword));
+    if (!hit) return { ok: false, reason: "missing_expected_keywords" };
+  }
+
+  return { ok: true, reason: "ok" };
+}
+
+function expectedKeywordsForPath(url) {
+  const path = safePathname(url);
+  if (!path) return [];
+  if (path.includes("about")) {
+    return ["about", "mission", "who we are", "our story", "history"];
+  }
+  if (path.includes("masthead") || path.includes("editorial")) {
+    return ["editor", "editorial", "masthead", "managing editor", "editor-in-chief"];
+  }
+  if (path.includes("staff") || path.includes("team") || path.includes("leadership")) {
+    return ["staff", "team", "leadership", "board", "editor"];
+  }
+  if (path.includes("imprint")) {
+    return ["imprint", "publisher", "editor", "contact"];
+  }
+  return [];
+}
+
+function safePathname(url) {
+  try {
+    return new URL(url).pathname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function hasBlockSignals(text) {
+  const normalized = text.toLowerCase();
+  return [
+    "access denied",
+    "verify you are a human",
+    "captcha",
+    "enable javascript",
+    "subscribe to continue",
+    "please subscribe",
+    "sign in to continue",
+    "cookies are required"
+  ].some((phrase) => normalized.includes(phrase));
 }
 
 function extractAuthorsFromJsonLd(html) {
@@ -1073,6 +1248,12 @@ function isLikelyHttpUrl(input) {
   } catch {
     return false;
   }
+}
+
+function normalizeLanguage(value) {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized.startsWith("de")) return "de";
+  return "en";
 }
 
 function json(payload, status = 200, extraHeaders = {}) {
