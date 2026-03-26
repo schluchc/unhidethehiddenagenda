@@ -26,16 +26,6 @@
         <p class="subtitle" id="subtitle">
           Paste an article URL. Get possible author motivations, affiliations, and pressure points.
         </p>
-        <!--<section class="quote-card">
-          <p class="quote-text" id="quote-text">
-            If you're not amazed by AI, you don't
-            really understand it. If you're not afraid of AI, you don't really understand
-            it.
-          </p>
-          <p class="quote-source" id="quote-source">
-            Mustafa Suleyman, CEO Microsoft AI & Co-Founder Deepmind
-          </p>
-        </section>-->
       </header>
 
       <section class="panel">
@@ -56,10 +46,7 @@
             <span id="label-debug-toggle">Enable developer debug details</span>
           </label>
         </form>
-        <p class="hint" id="hint">
-          This is a first-pass AI assessment and may include uncertainty. Always verify
-          critical claims manually.
-        </p>
+        <p class="hint" id="hint"></p>
       </section>
 
       <section id="status" class="status hidden"></section>
@@ -73,9 +60,9 @@
       <section id="results" class="results hidden">
         <article class="card">
           <h2 id="heading-article">Article</h2>
-          <p><strong>Title:</strong> <span id="article-title">-</span></p>
+          <p><strong id="label-article-title">Title:</strong> <span id="article-title">-</span></p>
           <p>
-            <strong>Source URL:</strong>
+            <strong id="label-article-source">Source URL:</strong>
             <a id="article-link" href="#" rel="noopener noreferrer" target="_blank">-</a>
           </p>
         </article>

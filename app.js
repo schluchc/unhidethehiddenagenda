@@ -33,7 +33,10 @@ const i18n = {
   headingBackgroundChecks: document.getElementById("heading-background-checks"),
   headingMotivations: document.getElementById("heading-motivations"),
   headingCaveats: document.getElementById("heading-caveats"),
-  headingDebug: document.getElementById("heading-debug")
+  headingDebug: document.getElementById("heading-debug"),
+  labelArticleTitle: document.getElementById("label-article-title"),
+  labelArticleSource: document.getElementById("label-article-source"),
+  pageTitle: document.getElementById("page-title")
 };
 
 const STRINGS = {
@@ -57,6 +60,8 @@ const STRINGS = {
     headingMotivations: "Potential Motivations / Influences",
     headingCaveats: "Claim Caveats",
     headingDebug: "Debug Details",
+    labelArticleTitle: "Title:",
+    labelArticleSource: "Source URL:",
     pageTitle: "Unhide the hidden agenda",
     statusInvalidUrl: "Please provide a valid http(s) URL.",
     statusStarted: "Analysis started. This can take up to a minute.",
@@ -74,6 +79,9 @@ const STRINGS = {
     caveatLabel: "Caveat",
     confidenceLabel: "Confidence",
     evidenceLabel: "Evidence",
+    confidenceHigh: "high",
+    confidenceMedium: "medium",
+    confidenceLow: "low",
     authorResidence: "Author Country of Residence",
     leadEditor: "Publisher Lead Editor / Redactor",
     affiliations: "Affiliations",
@@ -109,6 +117,8 @@ const STRINGS = {
     headingMotivations: "Mögliche Motive / Einflüsse",
     headingCaveats: "Behauptungs-Hinweise",
     headingDebug: "Debug-Details",
+    labelArticleTitle: "Titel:",
+    labelArticleSource: "Quelle (URL):",
     pageTitle: "Enthülle das verborgene Motiv",
     statusInvalidUrl: "Bitte eine gültige http(s)-URL angeben.",
     statusStarted: "Analyse gestartet. Das kann bis zu einer Minute dauern.",
@@ -126,6 +136,9 @@ const STRINGS = {
     caveatLabel: "Hinweis",
     confidenceLabel: "Sicherheit",
     evidenceLabel: "Beleg",
+    confidenceHigh: "hoch",
+    confidenceMedium: "mittel",
+    confidenceLow: "niedrig",
     authorResidence: "Land des Wohnsitzes der Autorin / des Autors",
     leadEditor: "Leitende Redaktion / Redaktionsleitung",
     affiliations: "Zugehörigkeiten",
@@ -224,7 +237,7 @@ function renderResults(payload) {
       const li = document.createElement("li");
       const strength = normalizeStrength(item.evidence_strength);
       const hint = item.evidence_hint || t("noEvidence");
-      li.innerHTML = `<strong>${escapeHtml(item.factor || t("unknown"))}</strong>: ${escapeHtml(item.impact || t("noDetails"))}<br><em>${escapeHtml(t("whyEstimate"))}:</em> ${escapeHtml(hint)}<br><em>${escapeHtml(t("evidenceStrength"))}:</em> <span class="tag ${strength}">${escapeHtml(strength)}</span>`;
+      li.innerHTML = `<strong>${escapeHtml(item.factor || t("unknown"))}</strong>: ${escapeHtml(item.impact || t("noDetails"))}<br><em>${escapeHtml(t("whyEstimate"))}:</em> ${escapeHtml(hint)}<br><em>${escapeHtml(t("evidenceStrength"))}:</em> <span class="tag ${strength}">${escapeHtml(formatConfidence(strength))}</span>`;
       motivationsEl.appendChild(li);
     }
   }
@@ -247,7 +260,7 @@ function renderResults(payload) {
         <p><strong>${escapeHtml(t("claimLabel"))}:</strong> ${escapeHtml(check.claim_sentence || "-")}</p>
         <p><strong>${escapeHtml(t("motivationLabel"))}:</strong> ${escapeHtml(check.potential_motivation_link || "-")}</p>
         <p><strong>${escapeHtml(t("caveatLabel"))}:</strong> ${escapeHtml(check.caveat || "-")}</p>
-        <p><strong>${escapeHtml(t("confidenceLabel"))}:</strong><span class="tag ${safeConfidence}">${escapeHtml(safeConfidence)}</span></p>
+        <p><strong>${escapeHtml(t("confidenceLabel"))}:</strong><span class="tag ${safeConfidence}">${escapeHtml(formatConfidence(safeConfidence))}</span></p>
       `;
 
       caveatsEl.appendChild(wrapper);
@@ -369,6 +382,13 @@ function normalizeStrength(value) {
   return ["high", "medium", "low"].includes(normalized) ? normalized : "low";
 }
 
+function formatConfidence(value) {
+  const normalized = normalizeStrength(value);
+  if (normalized === "high") return t("confidenceHigh");
+  if (normalized === "medium") return t("confidenceMedium");
+  return t("confidenceLow");
+}
+
 function renderBackgroundChecks(checks, publisherProfile, publisherProfileUrl) {
   const affiliations = checks.author_affiliations || [];
   const residence = checks.author_country_of_residence || {};
@@ -381,7 +401,7 @@ function renderBackgroundChecks(checks, publisherProfile, publisherProfileUrl) {
       : affiliations
           .map((item) => {
             const confidence = normalizeStrength(item.confidence);
-            return `<li><strong>${escapeHtml(item.name || t("unknown"))}</strong> (${escapeHtml(item.relationship || "unknown")})<br><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(item.evidence_hint || t("noDetails"))}<br><em>${escapeHtml(t("confidenceLabel"))}:</em> <span class="tag ${confidence}">${escapeHtml(confidence)}</span></li>`;
+            return `<li><strong>${escapeHtml(item.name || t("unknown"))}</strong> (${escapeHtml(item.relationship || "unknown")})<br><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(item.evidence_hint || t("noDetails"))}<br><em>${escapeHtml(t("confidenceLabel"))}:</em> <span class="tag ${confidence}">${escapeHtml(formatConfidence(confidence))}</span></li>`;
           })
           .join("");
 
@@ -393,16 +413,16 @@ function renderBackgroundChecks(checks, publisherProfile, publisherProfileUrl) {
       : fundingSources
           .map((item) => {
             const confidence = normalizeStrength(item.confidence);
-            return `<li><strong>${escapeHtml(item.name || t("unknown"))}</strong><br><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(item.evidence_hint || t("noDetails"))}<br><em>${escapeHtml(t("confidenceLabel"))}:</em> <span class="tag ${confidence}">${escapeHtml(confidence)}</span></li>`;
+            return `<li><strong>${escapeHtml(item.name || t("unknown"))}</strong><br><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(item.evidence_hint || t("noDetails"))}<br><em>${escapeHtml(t("confidenceLabel"))}:</em> <span class="tag ${confidence}">${escapeHtml(formatConfidence(confidence))}</span></li>`;
           })
           .join("");
 
   backgroundChecksEl.innerHTML = `
     ${publisherProfile ? `<p><strong>${escapeHtml(t("publisherProfile"))}:</strong> ${escapeHtml(publisherProfile)}${renderProfileLink(publisherProfileUrl)}</p>` : ""}
     <p><strong>${escapeHtml(t("authorResidence"))}:</strong> ${escapeHtml(residence.country || t("unknown"))}</p>
-    <p><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(residence.evidence_hint || t("noDetails"))} <span class="tag ${countryConfidence}">${escapeHtml(countryConfidence)}</span></p>
+    <p><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(residence.evidence_hint || t("noDetails"))} <span class="tag ${countryConfidence}">${escapeHtml(formatConfidence(countryConfidence))}</span></p>
     <p><strong>${escapeHtml(t("leadEditor"))}:</strong> ${escapeHtml(leadEditor.name || t("unknown"))} (${escapeHtml(leadEditor.role || "unknown")})</p>
-    <p><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(leadEditor.evidence_hint || t("noDetails"))} <span class="tag ${editorConfidence}">${escapeHtml(editorConfidence)}</span></p>
+    <p><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(leadEditor.evidence_hint || t("noDetails"))} <span class="tag ${editorConfidence}">${escapeHtml(formatConfidence(editorConfidence))}</span></p>
     <p><strong>${escapeHtml(t("affiliations"))}</strong></p>
     <ul>${affiliationsHtml}</ul>
     <p><strong>${escapeHtml(t("publisherFunding"))}</strong></p>
@@ -464,26 +484,38 @@ function setLanguage(lang) {
 }
 
 function applyLanguage() {
-  i18n.eyebrow.textContent = t("eyebrow");
-  i18n.subtitle.textContent = t("subtitle");
-  i18n.quoteText.textContent = t("quoteText");
-  i18n.quoteSource.textContent = t("quoteSource");
-  i18n.labelArticleUrl.textContent = t("labelArticleUrl");
-  i18n.labelDebugToggle.textContent = t("debugToggle");
-  i18n.hint.textContent = t("hint");
-  i18n.headingArticle.textContent = t("headingArticle");
-  i18n.headingAuthorProfile.textContent = t("headingAuthorProfile");
-  i18n.headingBackgroundChecks.textContent = t("headingBackgroundChecks");
-  i18n.headingMotivations.textContent = t("headingMotivations");
-  i18n.headingCaveats.textContent = t("headingCaveats");
-  i18n.headingDebug.textContent = t("headingDebug");
-  document.title = t("pageTitle");
+  setText(i18n.eyebrow, t("eyebrow"));
+  setText(i18n.subtitle, t("subtitle"));
+  setText(i18n.quoteText, t("quoteText"));
+  setText(i18n.quoteSource, t("quoteSource"));
+  setText(i18n.labelArticleUrl, t("labelArticleUrl"));
+  setText(i18n.labelDebugToggle, t("debugToggle"));
+  setText(i18n.hint, t("hint"));
+  setText(i18n.headingArticle, t("headingArticle"));
+  setText(i18n.headingAuthorProfile, t("headingAuthorProfile"));
+  setText(i18n.headingBackgroundChecks, t("headingBackgroundChecks"));
+  setText(i18n.headingMotivations, t("headingMotivations"));
+  setText(i18n.headingCaveats, t("headingCaveats"));
+  setText(i18n.headingDebug, t("headingDebug"));
+  setText(i18n.labelArticleTitle, t("labelArticleTitle"));
+  setText(i18n.labelArticleSource, t("labelArticleSource"));
+  const titleText = t("pageTitle");
+  setText(i18n.pageTitle, titleText);
+  document.title = titleText;
+  const titleTag = document.querySelector("title");
+  if (titleTag) titleTag.textContent = titleText;
 
   urlInput.placeholder = t("placeholderUrl");
   submitBtn.textContent = submitBtn.disabled ? t("analyzing") : t("analyze");
 
   for (const button of langButtons) {
     button.classList.toggle("active", button.dataset.lang === currentLang);
+  }
+}
+
+function setText(el, value) {
+  if (el) {
+    el.textContent = value;
   }
 }
 
