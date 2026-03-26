@@ -77,22 +77,18 @@ const STRINGS = {
     claimLabel: "Claim",
     motivationLabel: "Possible motivation link",
     caveatLabel: "Caveat",
-    confidenceLabel: "Confidence",
-    evidenceLabel: "Evidence",
-    confidenceHigh: "high",
-    confidenceMedium: "medium",
-    confidenceLow: "low",
     authorResidence: "Author Country of Residence",
     leadEditor: "Publisher Lead Editor / Redactor",
     affiliations: "Affiliations",
     noAffiliations: "No clear affiliations found.",
     whyEstimate: "Why this estimate",
-    evidenceStrength: "Evidence strength",
     publisherProfile: "Publisher Profile",
     publisherFunding: "Publisher Funding / Ownership Signals",
     noFunding: "No clear funding or ownership signals found.",
     noEvidence: "No specific basis provided.",
     noDetails: "No details.",
+    source: "Sources:",
+    unknownRelationship: "unknown",
     errorApiUnreachable:
       "Could not reach /api/analyze (network load failed). Check that the local dev server is running and retry.",
     errorGeneric: "Unable to analyze this article."
@@ -134,22 +130,18 @@ const STRINGS = {
     claimLabel: "Aussage",
     motivationLabel: "Möglicher Motiv-Zusammenhang",
     caveatLabel: "Hinweis",
-    confidenceLabel: "Sicherheit",
-    evidenceLabel: "Beleg",
-    confidenceHigh: "hoch",
-    confidenceMedium: "mittel",
-    confidenceLow: "niedrig",
     authorResidence: "Land des Wohnsitzes der Autorin / des Autors",
     leadEditor: "Leitende Redaktion / Redaktionsleitung",
     affiliations: "Zugehörigkeiten",
     noAffiliations: "Keine klaren Zugehörigkeiten gefunden.",
     whyEstimate: "Warum diese Einschätzung",
-    evidenceStrength: "Belegstärke",
     publisherProfile: "Publisher-Profil",
     publisherFunding: "Finanzierung / Eigentümer-Signale",
     noFunding: "Keine klaren Hinweise auf Finanzierung oder Eigentümerschaft gefunden.",
     noEvidence: "Keine konkrete Grundlage angegeben.",
     noDetails: "Keine Details.",
+    source: "Quellen:",
+    unknownRelationship: "unbekannt",
     errorApiUnreachable:
       "/api/analyze ist nicht erreichbar (Netzwerkfehler). Prüfe, ob der lokale Dev-Server läuft, und versuche es erneut.",
     errorGeneric: "Artikel konnte nicht analysiert werden."
@@ -159,6 +151,7 @@ const STRINGS = {
 let progressInterval = null;
 let activityStartedAt = 0;
 let currentLang = resolveInitialLanguage();
+let runtimeModel = "gpt-4.1-mini";
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -187,7 +180,7 @@ form.addEventListener("submit", async (event) => {
       body: JSON.stringify({ url, debug: debugEnabled, lang: currentLang })
     });
 
-    setActivityStage(t("activityModel"));
+    setActivityStage(getActivityModelLabel());
     const payload = await parseApiResponse(response);
     if (!response.ok) {
       throw new ApiError(payload.error || "Analysis failed.", payload, response.status);
@@ -220,12 +213,12 @@ function renderResults(payload) {
   articleLinkEl.textContent = article.url;
   articleLinkEl.href = article.url;
 
-  const authorProfileLink = renderProfileLink(analysis.author_profile_evidence_url);
-  authorProfileEl.innerHTML = `${escapeHtml(analysis.author_profile || t("noProfile"))}${authorProfileLink}`;
+  const authorProfileLinks = renderSourceLinks(analysis.author_profile_source_urls);
+  authorProfileEl.innerHTML = `${escapeHtml(analysis.author_profile || t("noProfile"))}${authorProfileLinks}`;
   renderBackgroundChecks(
     analysis.background_checks || {},
     analysis.publisher_profile || "",
-    analysis.publisher_profile_evidence_url || ""
+    analysis.publisher_profile_source_urls || []
   );
 
   motivationsEl.innerHTML = "";
@@ -235,9 +228,8 @@ function renderResults(payload) {
   } else {
     for (const item of motivations) {
       const li = document.createElement("li");
-      const strength = normalizeStrength(item.evidence_strength);
       const hint = item.evidence_hint || t("noEvidence");
-      li.innerHTML = `<strong>${escapeHtml(item.factor || t("unknown"))}</strong>: ${escapeHtml(item.impact || t("noDetails"))}<br><em>${escapeHtml(t("whyEstimate"))}:</em> ${escapeHtml(hint)}<br><em>${escapeHtml(t("evidenceStrength"))}:</em> <span class="tag ${strength}">${escapeHtml(formatConfidence(strength))}</span>`;
+      li.innerHTML = `<strong>${escapeHtml(item.factor || t("unknown"))}</strong>: ${escapeHtml(item.impact || t("noDetails"))}<br>${escapeHtml(hint)}${renderSourceLinks(item.source_urls)}`;
       motivationsEl.appendChild(li);
     }
   }
@@ -251,16 +243,11 @@ function renderResults(payload) {
       const wrapper = document.createElement("div");
       wrapper.className = "caveat";
 
-      const confidence = (check.confidence || "unknown").toLowerCase();
-      const safeConfidence = ["high", "medium", "low"].includes(confidence)
-        ? confidence
-        : "low";
-
       wrapper.innerHTML = `
         <p><strong>${escapeHtml(t("claimLabel"))}:</strong> ${escapeHtml(check.claim_sentence || "-")}</p>
         <p><strong>${escapeHtml(t("motivationLabel"))}:</strong> ${escapeHtml(check.potential_motivation_link || "-")}</p>
         <p><strong>${escapeHtml(t("caveatLabel"))}:</strong> ${escapeHtml(check.caveat || "-")}</p>
-        <p><strong>${escapeHtml(t("confidenceLabel"))}:</strong><span class="tag ${safeConfidence}">${escapeHtml(formatConfidence(safeConfidence))}</span></p>
+        <p>${renderSourceLinks(check.source_urls, true)}</p>
       `;
 
       caveatsEl.appendChild(wrapper);
@@ -377,19 +364,7 @@ function isLikelyHttpUrl(input) {
   }
 }
 
-function normalizeStrength(value) {
-  const normalized = String(value || "").toLowerCase();
-  return ["high", "medium", "low"].includes(normalized) ? normalized : "low";
-}
-
-function formatConfidence(value) {
-  const normalized = normalizeStrength(value);
-  if (normalized === "high") return t("confidenceHigh");
-  if (normalized === "medium") return t("confidenceMedium");
-  return t("confidenceLow");
-}
-
-function renderBackgroundChecks(checks, publisherProfile, publisherProfileUrl) {
+function renderBackgroundChecks(checks, publisherProfile, publisherProfileSourceUrls) {
   const affiliations = checks.author_affiliations || [];
   const residence = checks.author_country_of_residence || {};
   const leadEditor = checks.publisher_lead_editor_or_redactor || {};
@@ -400,29 +375,25 @@ function renderBackgroundChecks(checks, publisherProfile, publisherProfileUrl) {
       ? `<li>${t("noAffiliations")}</li>`
       : affiliations
           .map((item) => {
-            const confidence = normalizeStrength(item.confidence);
-            return `<li><strong>${escapeHtml(item.name || t("unknown"))}</strong> (${escapeHtml(item.relationship || "unknown")})<br><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(item.evidence_hint || t("noDetails"))}<br><em>${escapeHtml(t("confidenceLabel"))}:</em> <span class="tag ${confidence}">${escapeHtml(formatConfidence(confidence))}</span></li>`;
+            return `<li><strong>${escapeHtml(item.name || t("unknown"))}</strong> (${escapeHtml(item.relationship || t("unknownRelationship"))})<br>${escapeHtml(item.evidence_hint || t("noDetails"))}${renderSourceLinks(item.source_urls)}</li>`;
           })
           .join("");
 
-  const countryConfidence = normalizeStrength(residence.confidence);
-  const editorConfidence = normalizeStrength(leadEditor.confidence);
   const fundingHtml =
     fundingSources.length === 0
       ? `<li>${t("noFunding")}</li>`
       : fundingSources
           .map((item) => {
-            const confidence = normalizeStrength(item.confidence);
-            return `<li><strong>${escapeHtml(item.name || t("unknown"))}</strong><br><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(item.evidence_hint || t("noDetails"))}<br><em>${escapeHtml(t("confidenceLabel"))}:</em> <span class="tag ${confidence}">${escapeHtml(formatConfidence(confidence))}</span></li>`;
+            return `<li><strong>${escapeHtml(item.name || t("unknown"))}</strong><br>${escapeHtml(item.evidence_hint || t("noDetails"))}${renderSourceLinks(item.source_urls)}</li>`;
           })
           .join("");
 
   backgroundChecksEl.innerHTML = `
-    ${publisherProfile ? `<p><strong>${escapeHtml(t("publisherProfile"))}:</strong> ${escapeHtml(publisherProfile)}${renderProfileLink(publisherProfileUrl)}</p>` : ""}
+    ${publisherProfile ? `<p><strong>${escapeHtml(t("publisherProfile"))}:</strong> ${escapeHtml(publisherProfile)}${renderSourceLinks(publisherProfileSourceUrls)}</p>` : ""}
     <p><strong>${escapeHtml(t("authorResidence"))}:</strong> ${escapeHtml(residence.country || t("unknown"))}</p>
-    <p><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(residence.evidence_hint || t("noDetails"))} <span class="tag ${countryConfidence}">${escapeHtml(formatConfidence(countryConfidence))}</span></p>
+    <p>${escapeHtml(residence.evidence_hint || t("noDetails"))}${renderSourceLinks(residence.source_urls)}</p>
     <p><strong>${escapeHtml(t("leadEditor"))}:</strong> ${escapeHtml(leadEditor.name || t("unknown"))} (${escapeHtml(leadEditor.role || "unknown")})</p>
-    <p><em>${escapeHtml(t("evidenceLabel"))}:</em> ${escapeHtml(leadEditor.evidence_hint || t("noDetails"))} <span class="tag ${editorConfidence}">${escapeHtml(formatConfidence(editorConfidence))}</span></p>
+    <p>${escapeHtml(leadEditor.evidence_hint || t("noDetails"))}${renderSourceLinks(leadEditor.source_urls)}</p>
     <p><strong>${escapeHtml(t("affiliations"))}</strong></p>
     <ul>${affiliationsHtml}</ul>
     <p><strong>${escapeHtml(t("publisherFunding"))}</strong></p>
@@ -439,10 +410,48 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function renderProfileLink(url) {
-  if (!url) return "";
-  const safeUrl = escapeHtml(url);
-  return ` <a class="evidence-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">source</a>`;
+function renderSourceLinks(urls, inline = false) {
+  const safeUrls = normalizeSourceUrls(urls);
+  if (safeUrls.length === 0) return "";
+  const links = safeUrls
+    .map((url) => {
+      const safeUrl = escapeHtml(url);
+      return `<a class="evidence-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer" title="${safeUrl}">${escapeHtml(formatSourceLinkText(url))}</a>`;
+    })
+    .join(" ");
+  const prefix = inline ? "" : "<br>";
+  return `${prefix}<span class="source-list-label">${escapeHtml(t("source"))}</span> ${links}`;
+}
+
+function normalizeSourceUrls(value) {
+  if (Array.isArray(value)) {
+    return value.filter((item) => typeof item === "string" && item.trim());
+  }
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
+  }
+  return [];
+}
+
+function formatSourceLinkText(url) {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const lastSegment = segments.at(-1) || "";
+    const decodedSegment = decodeURIComponent(lastSegment)
+      .replace(/[-_]+/g, " ")
+      .replace(/\.[a-z0-9]+$/i, "")
+      .trim();
+
+    if (decodedSegment) {
+      return `${host} - ${decodedSegment}`;
+    }
+
+    return host;
+  } catch {
+    return url;
+  }
 }
 
 class ApiError extends Error {
@@ -523,6 +532,23 @@ function t(key) {
   return STRINGS[currentLang]?.[key] || STRINGS.en[key] || key;
 }
 
+function getActivityModelLabel() {
+  return `${t("activityModel")} (${runtimeModel})`;
+}
+
+async function loadRuntimeConfig() {
+  try {
+    const response = await fetch("/api/runtime-config");
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (payload?.model) {
+      runtimeModel = payload.model;
+    }
+  } catch {
+    // Keep default model label when runtime config is unavailable.
+  }
+}
+
 for (const button of langButtons) {
   button.addEventListener("click", () => {
     setLanguage(button.dataset.lang);
@@ -530,3 +556,4 @@ for (const button of langButtons) {
 }
 
 setLanguage(currentLang);
+loadRuntimeConfig();

@@ -3,7 +3,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { onRequestOptions, onRequestPost } from "./functions/api/analyze.js";
+import {
+  onRequestOptions as onAnalyzeOptions,
+  onRequestPost
+} from "./functions/api/analyze.js";
+import {
+  onRequestGet as onRuntimeConfigGet,
+  onRequestOptions as onRuntimeConfigOptions
+} from "./functions/api/runtime-config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,6 +35,11 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/analyze") {
       await handleAnalyze(req, res);
+      return;
+    }
+
+    if (url.pathname === "/api/runtime-config") {
+      await handleRuntimeConfig(req, res);
       return;
     }
 
@@ -56,9 +68,38 @@ async function handleAnalyze(req, res) {
   let workerResponse;
 
   if (req.method === "OPTIONS") {
-    workerResponse = await onRequestOptions(context);
+    workerResponse = await onAnalyzeOptions(context);
   } else if (req.method === "POST") {
     workerResponse = await onRequestPost(context);
+  } else {
+    workerResponse = new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json; charset=utf-8" }
+    });
+  }
+
+  res.statusCode = workerResponse.status;
+  for (const [key, value] of workerResponse.headers.entries()) {
+    res.setHeader(key, value);
+  }
+
+  const output = Buffer.from(await workerResponse.arrayBuffer());
+  res.end(output);
+}
+
+async function handleRuntimeConfig(req, res) {
+  const request = new Request(`http://localhost:${port}/api/runtime-config`, {
+    method: req.method,
+    headers: req.headers
+  });
+
+  const context = { request, env: process.env };
+  let workerResponse;
+
+  if (req.method === "OPTIONS") {
+    workerResponse = await onRuntimeConfigOptions(context);
+  } else if (req.method === "GET") {
+    workerResponse = await onRuntimeConfigGet(context);
   } else {
     workerResponse = new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,

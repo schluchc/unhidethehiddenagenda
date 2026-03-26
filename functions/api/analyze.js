@@ -231,7 +231,10 @@ Instructions:
 - Analyze the exact Author above as the primary subject throughout the output.
 - Do not switch the primary subject to another person/entity even if other names appear.
 - Identify the publisher name as best you can from the article metadata or context.
-- Provide a single best source URL for the author profile in "author_profile_evidence_url" when available.
+- You may and should use public background research beyond the article when it helps, including Wikipedia, reliable independent journalism, public biographies, official organization pages, and other credible public sources.
+- Query multiple independent sources whenever possible instead of relying on a single source.
+- Prefer independent sources over self-descriptions when researching the author; if you rely mainly on self-published bios or publisher pages, state that clearly.
+- You may list multiple supporting source URLs for the user in the relevant "source_urls" fields.
 - Focus on motivations that might impact honesty: affiliations, current/previous employers, funding incentives, political incentives, reputational pressure, legal pressure, fear, or career incentives.
 - If evidence is weak, state uncertainty clearly.
 - Avoid definitive accusations.
@@ -242,28 +245,28 @@ Return STRICT JSON only with this schema:
 {
   "publisher_name_guess": "string or Unknown",
   "author_profile": "short paragraph",
-  "author_profile_evidence_url": "string or empty",
+  "author_profile_source_urls": ["string URL"],
   "background_checks": {
     "author_affiliations": [
       {
         "name": "string",
         "relationship": "current|former|unknown",
         "evidence_hint": "string",
-        "confidence": "high|medium|low"
+        "source_urls": ["string URL"]
       }
     ],
     "author_country_of_residence": {
       "country": "string or Unknown",
       "evidence_hint": "string",
-      "confidence": "high|medium|low"
+      "source_urls": ["string URL"]
     }
   },
   "motivations": [
     {
       "factor": "string",
       "impact": "string",
-      "evidence_strength": "high|medium|low",
-      "evidence_hint": "string"
+      "evidence_hint": "string",
+      "source_urls": ["string URL"]
     }
   ],
   "key_claim_checks": [
@@ -271,7 +274,7 @@ Return STRICT JSON only with this schema:
       "claim_sentence": "string",
       "potential_motivation_link": "string",
       "caveat": "string",
-      "confidence": "high|medium|low"
+      "source_urls": ["string URL"]
     }
   ]
 }`;
@@ -301,26 +304,28 @@ Instructions:
 - ${languageRule}
 - Identify publisher lead editor/redactor if possible; otherwise state uncertainty explicitly.
 - Identify funding or ownership signals (owners, foundations, major sponsors, known funding bodies). If unclear, say so.
-- Use short evidence hints and confidence levels.
-- Provide a single best source URL for the publisher profile in "publisher_profile_evidence_url" when available.
-- Treat publisher self-descriptions as potentially biased. Prefer independent sources (e.g., Wikipedia, independent journalism) when available, and explicitly highlight where independent sources differ from publisher claims. If only publisher sources are available, state this clearly and lower confidence.
+- You may and should use public background research beyond the publisher site when it helps, including Wikipedia, reliable independent journalism, public records, official organization pages, and other credible public sources.
+- Query multiple independent sources whenever possible instead of relying on a single source.
+- Use short evidence hints.
+- You may list multiple supporting source URLs for the user in the relevant "source_urls" fields.
+- Treat publisher self-descriptions as potentially biased. Prefer independent sources (e.g., Wikipedia, independent journalism) when available, and explicitly highlight where independent sources differ from publisher claims. If only publisher sources are available, state this clearly.
 
 Return STRICT JSON only with this schema:
 {
   "publisher_profile": "short paragraph",
-  "publisher_profile_evidence_url": "string or empty",
+  "publisher_profile_source_urls": ["string URL"],
   "publisher_funding_sources": [
     {
       "name": "string",
       "evidence_hint": "string",
-      "confidence": "high|medium|low"
+      "source_urls": ["string URL"]
     }
   ],
   "publisher_lead_editor_or_redactor": {
     "name": "string or Unknown",
     "role": "string",
     "evidence_hint": "string",
-    "confidence": "high|medium|low"
+    "source_urls": ["string URL"]
   }
 }`;
 
@@ -336,20 +341,34 @@ function mergeAuthorPublisherAnalysis(authorStep, publisherStep) {
         name: "Unknown",
         role: "unknown",
         evidence_hint: "No details.",
-        confidence: "low"
+        source_urls: []
       },
     publisher_funding_sources: publisherStep?.publisher_funding_sources || []
   };
 
   return {
     author_profile: authorStep?.author_profile || "No profile generated by the model.",
-    author_profile_evidence_url: authorStep?.author_profile_evidence_url || "",
+    author_profile_source_urls:
+      normalizeSourceUrls(authorStep?.author_profile_source_urls || authorStep?.author_profile_evidence_url),
     publisher_profile: publisherStep?.publisher_profile || "",
-    publisher_profile_evidence_url: publisherStep?.publisher_profile_evidence_url || "",
+    publisher_profile_source_urls:
+      normalizeSourceUrls(
+        publisherStep?.publisher_profile_source_urls || publisherStep?.publisher_profile_evidence_url
+      ),
     background_checks: mergedBackground,
     motivations: authorStep?.motivations || [],
     key_claim_checks: authorStep?.key_claim_checks || []
   };
+}
+
+function normalizeSourceUrls(value) {
+  if (Array.isArray(value)) {
+    return value.filter((item) => typeof item === "string" && item.trim());
+  }
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
+  }
+  return [];
 }
 
 async function runModelRequest(providerConfig, trace, env, prompt, label) {
