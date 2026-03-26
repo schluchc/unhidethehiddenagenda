@@ -303,7 +303,8 @@ Output language: ${languageName}. All natural-language fields must be written in
 Instructions:
 - ${languageRule}
 - Identify publisher lead editor/redactor if possible; otherwise state uncertainty explicitly.
-- Identify funding or ownership signals (owners, foundations, major sponsors, known funding bodies). If unclear, say so.
+- Identify funding or ownership signals (owners, parent companies, foundations, major sponsors, known funding bodies). If unclear, say so.
+- If you can identify a likely owner or parent organization, investigate that owner as well and summarize why that ownership may matter. If no owner can be identified with reasonable confidence, state that clearly.
 - You may and should use public background research beyond the publisher site when it helps, including Wikipedia, reliable independent journalism, public records, official organization pages, and other credible public sources.
 - Query multiple independent sources whenever possible instead of relying on a single source.
 - Use short evidence hints.
@@ -314,6 +315,13 @@ Return STRICT JSON only with this schema:
 {
   "publisher_profile": "short paragraph",
   "publisher_profile_source_urls": ["string URL"],
+  "publisher_owner_investigation": {
+    "name": "string or Unknown",
+    "relationship": "owner|parent_company|foundation|major_shareholder|unknown",
+    "summary": "short paragraph",
+    "evidence_hint": "string",
+    "source_urls": ["string URL"]
+  },
   "publisher_funding_sources": [
     {
       "name": "string",
@@ -343,6 +351,13 @@ function mergeAuthorPublisherAnalysis(authorStep, publisherStep) {
         evidence_hint: "No details.",
         source_urls: []
       },
+    publisher_owner_investigation: publisherStep?.publisher_owner_investigation || {
+      name: "Unknown",
+      relationship: "unknown",
+      summary: "",
+      evidence_hint: "No details.",
+      source_urls: []
+    },
     publisher_funding_sources: publisherStep?.publisher_funding_sources || []
   };
 

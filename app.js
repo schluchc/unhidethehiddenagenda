@@ -79,11 +79,13 @@ const STRINGS = {
     caveatLabel: "Caveat",
     authorResidence: "Author Country of Residence",
     leadEditor: "Publisher Lead Editor / Redactor",
+    publisherOwner: "Publisher Owner Investigation",
     affiliations: "Affiliations",
     noAffiliations: "No clear affiliations found.",
     whyEstimate: "Why this estimate",
     publisherProfile: "Publisher Profile",
     publisherFunding: "Publisher Funding / Ownership Signals",
+    noOwner: "No clear owner or parent organization found.",
     noFunding: "No clear funding or ownership signals found.",
     noEvidence: "No specific basis provided.",
     noDetails: "No details.",
@@ -132,11 +134,13 @@ const STRINGS = {
     caveatLabel: "Hinweis",
     authorResidence: "Land des Wohnsitzes der Autorin / des Autors",
     leadEditor: "Leitende Redaktion / Redaktionsleitung",
+    publisherOwner: "Eigentümerprüfung des Publishers",
     affiliations: "Zugehörigkeiten",
     noAffiliations: "Keine klaren Zugehörigkeiten gefunden.",
     whyEstimate: "Warum diese Einschätzung",
     publisherProfile: "Publisher-Profil",
     publisherFunding: "Finanzierung / Eigentümer-Signale",
+    noOwner: "Kein klarer Eigentümer oder keine Mutterorganisation gefunden.",
     noFunding: "Keine klaren Hinweise auf Finanzierung oder Eigentümerschaft gefunden.",
     noEvidence: "Keine konkrete Grundlage angegeben.",
     noDetails: "Keine Details.",
@@ -368,6 +372,7 @@ function renderBackgroundChecks(checks, publisherProfile, publisherProfileSource
   const affiliations = checks.author_affiliations || [];
   const residence = checks.author_country_of_residence || {};
   const leadEditor = checks.publisher_lead_editor_or_redactor || {};
+  const ownerInvestigation = checks.publisher_owner_investigation || {};
   const fundingSources = checks.publisher_funding_sources || [];
 
   const affiliationsHtml =
@@ -388,12 +393,24 @@ function renderBackgroundChecks(checks, publisherProfile, publisherProfileSource
           })
           .join("");
 
+  const hasOwnerInvestigation =
+    (ownerInvestigation.name && ownerInvestigation.name !== "Unknown") ||
+    ownerInvestigation.summary ||
+    (Array.isArray(ownerInvestigation.source_urls) && ownerInvestigation.source_urls.length > 0);
+
+  const ownerHtml = hasOwnerInvestigation
+    ? `<p><strong>${escapeHtml(t("publisherOwner"))}:</strong> ${escapeHtml(ownerInvestigation.name || t("unknown"))} (${escapeHtml(ownerInvestigation.relationship || t("unknownRelationship"))})</p>
+    <p>${escapeHtml(ownerInvestigation.summary || t("noDetails"))}</p>
+    <p>${escapeHtml(ownerInvestigation.evidence_hint || t("noEvidence"))}${renderSourceLinks(ownerInvestigation.source_urls)}</p>`
+    : `<p><strong>${escapeHtml(t("publisherOwner"))}:</strong> ${escapeHtml(t("noOwner"))}</p>`;
+
   backgroundChecksEl.innerHTML = `
     ${publisherProfile ? `<p><strong>${escapeHtml(t("publisherProfile"))}:</strong> ${escapeHtml(publisherProfile)}${renderSourceLinks(publisherProfileSourceUrls)}</p>` : ""}
     <p><strong>${escapeHtml(t("authorResidence"))}:</strong> ${escapeHtml(residence.country || t("unknown"))}</p>
     <p>${escapeHtml(residence.evidence_hint || t("noDetails"))}${renderSourceLinks(residence.source_urls)}</p>
     <p><strong>${escapeHtml(t("leadEditor"))}:</strong> ${escapeHtml(leadEditor.name || t("unknown"))} (${escapeHtml(leadEditor.role || "unknown")})</p>
     <p>${escapeHtml(leadEditor.evidence_hint || t("noDetails"))}${renderSourceLinks(leadEditor.source_urls)}</p>
+    ${ownerHtml}
     <p><strong>${escapeHtml(t("affiliations"))}</strong></p>
     <ul>${affiliationsHtml}</ul>
     <p><strong>${escapeHtml(t("publisherFunding"))}</strong></p>
