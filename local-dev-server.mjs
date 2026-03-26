@@ -41,7 +41,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(port, () => {
   console.log(`Local server running at http://localhost:${port}`);
-  console.log("Required env for AI calls: APERTUS_API_KEY (or AI_API_KEY)");
+  console.log("Required env for AI calls: OPENAI_API_KEY (or AI_API_KEY)");
 });
 
 async function handleAnalyze(req, res) {

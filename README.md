@@ -38,22 +38,22 @@ npm install
 npx wrangler pages dev . --compatibility-date=2025-01-15
 ```
 
-Set local secret (Apertus via PublicAI):
+Set local secret (OpenAI):
 
 ```bash
-npx wrangler pages secret put APERTUS_API_KEY
+npx wrangler pages secret put OPENAI_API_KEY
 ```
 
 Optional model override:
 
 ```bash
-npx wrangler pages secret put APERTUS_MODEL
+npx wrangler pages secret put OPENAI_MODEL
 ```
 
 Optional endpoint override (only if needed):
 
 ```bash
-npx wrangler pages secret put APERTUS_API_BASE_URL
+npx wrangler pages secret put OPENAI_API_BASE_URL
 ```
 
 Open the local URL shown by Wrangler.
@@ -64,7 +64,7 @@ Run the built-in local server:
 
 ```bash
 npm install
-APERTUS_API_KEY=your_key_here npm run dev:local
+OPENAI_API_KEY=your_key_here npm run dev:local
 ```
 
 Open `http://localhost:8788`.
@@ -72,9 +72,9 @@ Open `http://localhost:8788`.
 Optional env vars:
 
 ```bash
-APERTUS_MODEL=swiss-ai/apertus-8b-instruct
-APERTUS_API_BASE_URL=https://api.publicai.co/v1/chat/completions
-APERTUS_USER_AGENT=truth-check/0.1
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_API_BASE_URL=https://api.openai.com/v1/chat/completions
+OPENAI_USER_AGENT=truth-check/0.1
 DEBUG_ANALYZE=1
 SUPPLEMENTAL_MAX_PAGES=5
 SUPPLEMENTAL_TIMEOUT_MS=12000
@@ -105,10 +105,10 @@ Expanded context retrieval:
    - Build command: *(empty)*
    - Build output directory: `.`
 5. Add environment variable in Pages project settings:
-   - `APERTUS_API_KEY` (required)
-   - `APERTUS_MODEL` (optional, default is `swiss-ai/apertus-8b-instruct`)
-   - `APERTUS_API_BASE_URL` (optional, default is `https://api.publicai.co/v1/chat/completions`)
-   - `APERTUS_USER_AGENT` (optional, otherwise `truth-check/0.1`)
+   - `OPENAI_API_KEY` (required)
+   - `OPENAI_MODEL` (optional, default is `gpt-4.1-mini`)
+   - `OPENAI_API_BASE_URL` (optional, default is `https://api.openai.com/v1/chat/completions`)
+   - `OPENAI_USER_AGENT` (optional, otherwise `truth-check/0.1`)
 6. Deploy.
 
 Cloudflare will host static files and the `functions/api/analyze.js` endpoint.
@@ -117,10 +117,10 @@ Cloudflare will host static files and the `functions/api/analyze.js` endpoint.
 
 The function accepts these aliases for flexibility:
 
-- API key: `APERTUS_API_KEY`, `AI_API_KEY`, `OPENAI_API_KEY`
-- Base URL: `AI_API_BASE_URL`, `APERTUS_API_BASE_URL`
-- Model: `AI_MODEL`, `APERTUS_MODEL`, `OPENAI_MODEL`
-- User-Agent: `AI_USER_AGENT`, `APERTUS_USER_AGENT`
+- API key: `OPENAI_API_KEY`, `AI_API_KEY`, `APERTUS_API_KEY`
+- Base URL: `OPENAI_API_BASE_URL`, `AI_API_BASE_URL`, `APERTUS_API_BASE_URL`
+- Model: `OPENAI_MODEL`, `AI_MODEL`, `APERTUS_MODEL`
+- User-Agent: `OPENAI_USER_AGENT`, `AI_USER_AGENT`, `APERTUS_USER_AGENT`
 
 ## Notes and caveats
 

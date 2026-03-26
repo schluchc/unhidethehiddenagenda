@@ -1,4 +1,4 @@
-const DEFAULT_APERTUS_URL = "https://api.publicai.co/v1/chat/completions";
+const DEFAULT_OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_ARTICLE_TIMEOUT_MS = 20000;
 const DEFAULT_MODEL_TIMEOUT_MS = 65000;
 const DEFAULT_SUPPLEMENTAL_TIMEOUT_MS = 12000;
@@ -33,7 +33,7 @@ export async function onRequestPost(context) {
       return json(
         {
           error:
-            "Missing APERTUS_API_KEY (or AI_API_KEY) in Cloudflare environment variables."
+            "Missing OPENAI_API_KEY (or AI_API_KEY) in Cloudflare environment variables."
         },
         500,
         corsHeaders
@@ -438,10 +438,14 @@ async function runModelRequest(providerConfig, trace, env, prompt, label) {
 
 function resolveModelProvider(env) {
   return {
-    apiKey: env.APERTUS_API_KEY || env.AI_API_KEY || env.OPENAI_API_KEY || "",
-    baseUrl: env.AI_API_BASE_URL || env.APERTUS_API_BASE_URL || DEFAULT_APERTUS_URL,
-    model: env.AI_MODEL || env.APERTUS_MODEL || env.OPENAI_MODEL || "swiss-ai/apertus-8b-instruct",
-    userAgent: env.AI_USER_AGENT || env.APERTUS_USER_AGENT || "truth-check/0.1"
+    apiKey: env.OPENAI_API_KEY || env.AI_API_KEY || env.APERTUS_API_KEY || "",
+    baseUrl:
+      env.OPENAI_API_BASE_URL ||
+      env.AI_API_BASE_URL ||
+      env.APERTUS_API_BASE_URL ||
+      DEFAULT_OPENAI_URL,
+    model: env.OPENAI_MODEL || env.AI_MODEL || env.APERTUS_MODEL || "gpt-4.1-mini",
+    userAgent: env.OPENAI_USER_AGENT || env.AI_USER_AGENT || env.APERTUS_USER_AGENT || "truth-check/0.1"
   };
 }
 
